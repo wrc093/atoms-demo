@@ -15,7 +15,7 @@
   async function open(){
     if(opening||dialog.open){if(dialog.open)dialog.focus();return false;}
     opening=true;opener=document.activeElement;
-    try{await refresh();}catch{/* Show the form; saving will report connection failures. */}
+    try{await refresh();}catch(failure){if(failure.status===401){opening=false;return false;}}
     const saved=FormaAPI.settings?.userModel,connection=saved?.ready?saved:presets.deepseek;
     form.reset();error.hidden=true;pending=false;submit.disabled=false;
     form.elements.provider.value=connection.baseUrl===presets.deepseek.baseUrl?'deepseek':connection.baseUrl===presets.openai.baseUrl?'openai':'custom';
@@ -49,6 +49,7 @@
   dialog.addEventListener('click',event=>{if(event.target===dialog){const box=dialog.getBoundingClientRect();if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)finish();}});
   window.addEventListener('message',event=>{const frame=document.querySelector('.workspace-page>iframe');if(event.origin!==location.origin||event.source!==frame?.contentWindow)return;if(event.data?.type==='forma-model-settings-changed')refresh().catch(()=>{});if(event.data?.type==='forma-model-dialog-state'&&typeof event.data.open==='boolean')document.documentElement.toggleAttribute('data-model-dialog-open',event.data.open);});
   window.addEventListener('hashchange',()=>{if(dialog.open)finish();else markDialog(false);});
+  window.addEventListener('forma-auth-required',()=>{pending=false;opening=false;if(dialog.open)finish();form.elements.apiKey.value='';});
   window.addEventListener('pagehide',()=>form.elements.apiKey.value='');
   window.FormaModel={open,refresh,options,label};
 })();

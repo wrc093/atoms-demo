@@ -43,10 +43,18 @@ class BackendTest(unittest.TestCase):
         threading.Thread(target=self.server.serve_forever,daemon=True).start()
         self.base=f"http://127.0.0.1:{self.server.server_port}"
         self.client=Client(self.base)
-        status,self.bootstrap,headers=self.client.call('/api/bootstrap','POST',{})
+        status,anonymous,_=self.client.call('/api/bootstrap','POST',{})
+        self.assertEqual(status,200);self.assertIsNone(anonymous['user'])
+        status,self.bootstrap,self.auth_headers=self.client.call('/api/auth/register','POST',{'name':'测试创作者','email':'test@example.invalid','password':'A-test-password-92'})
         self.assertEqual(status,200)
-        self.project=self.bootstrap["projects"][0]["id"]
-        self.root='/api/projects/'+self.project
+        owner=self.bootstrap['user']['id']
+        project=self.ws.create_project(owner,{'name':'拾光','prompt':'阅读收藏夹','type':'reading'})
+        self.project=project['id'];self.root='/api/projects/'+self.project
+        plan={'appName':'拾光','goal':'阅读收藏夹','kind':'reading','mode':'starter','features':['collect','categories','bookmarks'],'palette':'green'}
+        self.ws.patch_project(owner,self.project,{'plan':plan})
+        with self.ws.db() as connection:
+            self.ws.replace_sources(connection,self.project,starter(plan));self.ws.snapshot(connection,self.project,'测试示例','starter')
+        self.bootstrap['projects']=self.ws.projects(owner)
 
     def tearDown(self):
         self.server.shutdown();self.server.server_close();self.folder.cleanup()
@@ -58,10 +66,10 @@ class BackendTest(unittest.TestCase):
             time.sleep(.025)
         self.fail('job timed out')
 
-    def test_real_auth_cookie_upgrade_and_login(self):
+    def test_real_auth_cookie_rotation_and_login(self):
         original=self.bootstrap['user']['id']
         token=next(iter(self.client.jar)).value
-        response=self.client.call('/api/auth/register','POST',{'name':'测试创作者','email':'test@example.invalid','password':'A-test-password-92'})
+        response=self.client.call('/api/auth/login','POST',{'email':'test@example.invalid','password':'A-test-password-92'})
         self.assertEqual(response[0],200);self.assertEqual(response[1]['user']['id'],original)
         self.assertFalse(response[1]['user']['guest']);self.assertIn('HttpOnly',response[2]['Set-Cookie'])
         self.assertEqual(response[1]['projects'][0]['id'],self.project)
@@ -76,7 +84,7 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(result[0],200);self.assertEqual(result[1]['projects'][0]['id'],self.project)
 
     def test_tenant_isolation_for_all_project_reads_and_writes(self):
-        other=Client(self.base);other.call('/api/bootstrap','POST',{})
+        other=Client(self.base);self.assertEqual(other.call('/api/auth/register','POST',{'email':'other@example.invalid','password':'Other-test-password-92'})[0],200)
         for tail in ['', '/files','/preview','/versions','/runtime','/export']:
             self.assertEqual(other.call(self.root+tail)[0],404,tail)
         self.assertEqual(other.call(self.root,'PATCH',{'star':True})[0],404)
@@ -126,7 +134,7 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(status,202);job=self.wait_job(data['job']['id']);self.assertEqual(job['status'],'completed',job)
         self.assertEqual(job['step'],4);self.assertGreaterEqual(len(job['events']),5)
         self.assertIn('晚读',self.client.call(self.root+'/preview')[1]['html'])
-        other=Client(self.base);other.call('/api/bootstrap','POST',{})
+        other=Client(self.base);self.assertEqual(other.call('/api/auth/register','POST',{'email':'other@example.invalid','password':'Other-test-password-92'})[0],200)
         self.assertEqual(other.call('/api/jobs/'+job['id'])[0],404)
 
     def test_runtime_session_and_project_survive_reopening_database(self):
@@ -205,7 +213,7 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(status,200);self.assertTrue(result['settings']['userModel']['ready'])
         self.assertNotIn('user-test-key-only',json.dumps(result))
         self.assertNotIn('key',result['settings']['userModel'])
-        other=Client(self.base);other.call('/api/bootstrap','POST',{})
+        other=Client(self.base);self.assertEqual(other.call('/api/auth/register','POST',{'email':'other@example.invalid','password':'Other-test-password-92'})[0],200)
         self.assertFalse(other.call('/api/model-connection')[1]['settings']['userModel']['ready'])
         self.assertEqual(other.call('/api/model-connection','PUT',{},headers={'Origin':'https://evil.invalid'})[0],403)
         self.assertEqual(Client(self.base).call('/api/model-connection')[0],401)
@@ -252,6 +260,73 @@ class BackendTest(unittest.TestCase):
         with self.ws.db() as connection:
             requests=connection.execute('SELECT request FROM jobs').fetchall()
             self.assertTrue(all('user-test-key-only' not in row['request'] for row in requests))
+
+
+    def protected_requests(self, client):
+        requests=[('/api/projects','GET',None),('/api/projects','POST',{'name':'不能创建','prompt':'unauthenticated'}),('/api/model-connection','GET',None),('/api/model-connection','PUT',{}),('/api/model-connection','DELETE',{}),('/api/jobs/missing','GET',None),('/api/jobs/missing/cancel','POST',{})]
+        requests += [(self.root+tail,method,data) for tail,method,data in [('', 'GET',None),('', 'PATCH',{}),('/files','GET',None),('/files','PUT',{'path':'secret.txt','text':'x'}),('/build','POST',{}),('/generate','POST',{'mode':'starter','prompt':'test','operation':'build'}),('/restore','POST',{'version':1}),('/versions','GET',None),('/preview','GET',None),('/runtime','GET',None),('/runtime','PUT',{'key':'test','value':1}),('/export','GET',None)]]
+        for path,method,data in requests:
+            with self.subTest(path=path,method=method):self.assertEqual(client.call(path,method,data)[0],401)
+
+    def test_anonymous_bootstrap_does_not_create_users_sessions_or_projects(self):
+        anonymous=Client(self.base)
+        with self.ws.db() as c:before=[c.execute('SELECT count(*) FROM '+table).fetchone()[0] for table in ('users','sessions','projects')]
+        for _ in range(3):
+            status,result,headers=anonymous.call('/api/bootstrap','POST',{})
+            self.assertEqual(status,200);self.assertIsNone(result['user']);self.assertEqual(result['projects'],[])
+            self.assertTrue(result['settings']['requiresLogin']);self.assertNotIn('Set-Cookie',headers)
+        self.assertEqual(len(anonymous.jar),0)
+        with self.ws.db() as c:self.assertEqual(before,[c.execute('SELECT count(*) FROM '+table).fetchone()[0] for table in ('users','sessions','projects')])
+
+    def test_anonymous_access_and_guest_endpoint_are_blocked(self):
+        anonymous=Client(self.base);self.protected_requests(anonymous)
+        self.assertEqual(anonymous.call('/api/auth/guest','POST',{})[0],401)
+        self.assertEqual(self.client.call('/api/auth/guest','POST',{})[0],401)
+        self.assertEqual(self.client.call(self.root)[1]['project']['currentVersion'],1)
+
+    def legacy_client(self):
+        legacy_id='legacy-user'
+        with self.ws.db() as c:c.execute('INSERT INTO users VALUES(?,?,NULL,NULL,1,?)',(legacy_id,'原访客',now()))
+        project=self.ws.create_project(legacy_id,{'name':'旧项目','prompt':'保留已有内容'})
+        self.ws.put_file(legacy_id,project['id'],{'path':'note.txt','text':'已有文件'})
+        token=self.ws.new_session(legacy_id);legacy=Client(self.base)
+        legacy.jar.set_cookie(http.cookiejar.Cookie(version=0,name='forma_session',value=token,port=None,port_specified=False,domain='127.0.0.1',domain_specified=False,domain_initial_dot=False,path='/',path_specified=True,secure=False,expires=None,discard=True,comment=None,comment_url=None,rest={'HttpOnly':None}))
+        return legacy,legacy_id,project,token
+
+    def test_legacy_guest_requires_registration_and_keeps_existing_data(self):
+        legacy,legacy_id,project,token=self.legacy_client()
+        response=legacy.call('/api/bootstrap','POST',{})[1]
+        self.assertIsNone(response['user']);self.assertEqual(response['projects'],[])
+        self.protected_requests(legacy)
+        self.assertEqual(legacy.call('/api/projects/'+project['id'])[0],401)
+        status,result,_=legacy.call('/api/auth/register','POST',{'email':'legacy@example.invalid','password':'Legacy-test-password-92'})
+        self.assertEqual(status,200);self.assertEqual(result['user']['id'],legacy_id);self.assertFalse(result['user']['guest'])
+        self.assertEqual(result['projects'][0]['id'],project['id']);self.assertIsNone(self.ws.session(token))
+        self.assertEqual(legacy.call('/api/projects/'+project['id']+'/files')[1]['files'][0]['text'],'已有文件')
+
+    def test_legacy_projects_move_only_after_successful_existing_account_login(self):
+        legacy,legacy_id,project,token=self.legacy_client()
+        self.assertEqual(legacy.call('/api/auth/login','POST',{'email':'test@example.invalid','password':'wrong-password'})[0],401)
+        self.assertEqual(self.ws.projects(legacy_id)[0]['id'],project['id'])
+        status,result,_=legacy.call('/api/auth/login','POST',{'email':'test@example.invalid','password':'A-test-password-92'})
+        self.assertEqual(status,200);self.assertEqual(result['user']['id'],self.bootstrap['user']['id'])
+        self.assertIn(project['id'],[item['id'] for item in result['projects']]);self.assertEqual(self.ws.projects(legacy_id),[])
+        self.assertIsNone(self.ws.session(token))
+        self.assertEqual(legacy.call('/api/projects/'+project['id']+'/files')[1]['files'][0]['text'],'已有文件')
+
+    def test_expired_session_cannot_access_protected_endpoints(self):
+        with self.ws.db() as c:c.execute('UPDATE sessions SET expires=?',(now()-1,))
+        self.protected_requests(self.client)
+        self.assertIsNone(self.client.call('/api/bootstrap','POST',{})[1]['user'])
+
+    def test_direct_workbench_requires_login(self):
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self,*args,**kwargs):return None
+        anonymous=Client(self.base);anonymous.opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(anonymous.jar),NoRedirect())
+        status,_,headers=anonymous.call('/workbench.html?id='+self.project+'&view=editor')
+        self.assertEqual(status,303);self.assertTrue(headers['Location'].startswith('/#/login?next='))
+        self.assertIn(self.project,headers['Location'])
+        self.assertEqual(self.client.call('/workbench.html?id='+self.project)[0],200)
 
 
 if __name__=='__main__':unittest.main()

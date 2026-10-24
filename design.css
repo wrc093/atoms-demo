@@ -24,3 +24,4 @@ html{scroll-behavior:smooth;scroll-padding-top:30px}body{font-family:var(--sans)
 
 .template-art{color:#384434}.portfolio-paper{color:#3d4438}.dashboard-paper{color:#394434}
 .project-card>.project-star{width:24px;height:24px;display:grid;place-items:center;padding:4px;right:10px;bottom:15px;text-align:center}.project-card p{padding-right:18px}
+.auth-login-required{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--text-secondary);padding:12px 14px;margin:22px 0;border:1px solid var(--line);border-radius:8px;background:var(--soft)}.auth-login-required svg{width:14px;height:14px;flex-shrink:0}

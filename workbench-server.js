@@ -145,6 +145,7 @@
   mode.addEventListener('change',()=>{if(mode.value==='byok'&&!FormaAPI.settings?.userModel?.ready)FormaModel.open();});
   window.addEventListener('pagehide',()=>clearTimeout(pollTimer));
   ready.then(async data=>{
+    if(!data.user||data.user.guest){go('/login?next='+encodeURIComponent('/workspace/'+id));return;}
     await load();
     mode.innerHTML=FormaModel.options(detail.project.plan.mode|| (data.settings.modelReady?'ai':'byok'));
     icons();

@@ -4,13 +4,14 @@ import io
 import json
 import mimetypes
 import os
+import re
 import secrets
 import sys
 import zipfile
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from backend.compiler import BuildError, compile_preview
 from backend.core import APIError, Workspace
@@ -126,22 +127,21 @@ class Handler(BaseHTTPRequestHandler):
         if parts==["api","health"] and method=="GET":return self.send(200,{"ok":True,"apiVersion":1})
         token=self.cookie_token();user=self.ws.session(token)
         if parts==["api","bootstrap"] and method=="POST":
-            self.body();headers={}
-            if not user:
-                user=self.ws.guest();token=self.ws.new_session(user["id"]);headers["Set-Cookie"]=self.session_cookie(token)
-            return self.send(200,{"user":user,"projects":self.ws.projects(user["id"]),"settings":self.ws.settings(user["id"]),"apiVersion":1},headers=headers)
+            self.body()
+            authenticated = user and not user["guest"]
+            return self.send(200,{"user":user if authenticated else None,"projects":self.ws.projects(user["id"]) if authenticated else [],"settings":self.ws.settings(user["id"]) if authenticated else {"requiresLogin":True},"apiVersion":1})
         if len(parts)==3 and parts[:2]==["api","auth"] and method=="POST":
             data=self.body();action=parts[2]
             if action=="logout":
                 if user:self.ws.clear_user_model(user["id"])
                 self.ws.logout(token);return self.send(200,{"ok":True},headers={"Set-Cookie":self.session_cookie("",True)})
-            if action=="guest":new_user=user or self.ws.guest()
-            elif action in ("register","login"):new_user=self.ws.auth(action,data,user,self.client_address[0])
+            if action=="guest":raise APIError(401,"访客入口已关闭，请先注册或登录")
+            if action in ("register","login"):new_user=self.ws.auth(action,data,user,self.client_address[0])
             else:raise APIError(404,"接口不存在")
             if user and user["id"]!=new_user["id"]:self.ws.clear_user_model(user["id"])
             self.ws.logout(token);new_token=self.ws.new_session(new_user["id"])
             return self.send(200,{"user":new_user,"projects":self.ws.projects(new_user["id"]),"settings":self.ws.settings(new_user["id"])},headers={"Set-Cookie":self.session_cookie(new_token)})
-        if not user:raise APIError(401,"登录已过期，请重新进入工作空间")
+        if not user or user["guest"]:raise APIError(401,"请先登录，再使用工作空间")
         owner=user["id"]
         if parts==["api","model-connection"]:
             if method=="GET":return self.send(200,{"settings":self.ws.settings(owner)})
@@ -207,6 +207,12 @@ class Handler(BaseHTTPRequestHandler):
         if not target.is_relative_to(ROOT) or any(part.startswith(".") or part in ("backend","tests","preview") for part in parts):raise APIError(404,"文件不存在")
         allowed=(len(parts)==1 and target.suffix in (".html",".css",".js")) or (parts[0]=="assets")
         if not allowed or not target.is_file():raise APIError(404,"文件不存在")
+        if parts==["workbench.html"]:
+            user=self.ws.session(self.cookie_token())
+            if not user or user["guest"]:
+                query=parse_qs(urlsplit(self.path).query);project=query.get("id",[""])[0];view=query.get("view",["preview"])[0]
+                route="/workspace/"+project+"?view="+(view if view in ("preview","editor","files") else "preview") if re.fullmatch(r"p_[a-f0-9]{24}",project) else "/projects"
+                return self.send(303,"","text/plain; charset=utf-8",{"Location":"/#/login?next="+quote(route,safe="")})
         mime=mimetypes.guess_type(str(target))[0] or "application/octet-stream"
         return self.send(200,target.read_bytes(),mime)
 

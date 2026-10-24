@@ -114,7 +114,7 @@ class Workspace:
         with self.model_lock:
             connection = self.user_models.get(owner)
             user_model = {"ready":bool(connection), "model":connection["model"] if connection else "", "baseUrl":connection["base_url"] if connection else "", "api":connection["api"] if connection else "chat_completions", "retention":"memory"}
-        return {"userModel":user_model,"modelReady": self.model_ready(), "model": self.config.get("model", "gpt-4o-mini"), "modes": ["starter"] + (["ai"] if self.model_ready() else []) + (["byok"] if user_model["ready"] else []), "storage": "sqlite"}
+        return {"requiresLogin":False,"userModel":user_model,"modelReady": self.model_ready(), "model": self.config.get("model", "gpt-4o-mini"), "modes": ["starter"] + (["ai"] if self.model_ready() else []) + (["byok"] if user_model["ready"] else []), "storage": "sqlite"}
 
     def set_user_model(self, owner, data):
         with self.model_lock:
@@ -156,18 +156,6 @@ class Workspace:
         with self.db() as c:
             c.execute("DELETE FROM sessions WHERE token=?", (hashlib.sha256((token or "").encode()).hexdigest(),))
 
-    def guest(self):
-        user_id = uid("u_")
-        with self.db() as c:
-            c.execute("INSERT INTO users VALUES(?,?,NULL,NULL,1,?)", (user_id, "体验创作者", now()))
-        project = self.create_project(user_id, {"name": "拾光 · 阅读收藏夹", "prompt": "做一个可以收藏文章、分类筛选与标记待读的阅读空间。", "type": "reading"})
-        plan = {"appName": "拾光", "goal": project["prompt"], "features": ["collect", "categories", "bookmarks"], "palette": "green", "kind": "reading", "mode": "starter"}
-        with self.db() as c:
-            c.execute("UPDATE projects SET plan=? WHERE id=?", (encode(plan), project["id"]))
-            self.replace_sources(c, project["id"], starter(plan))
-            self.snapshot(c, project["id"], "阅读收藏夹 · 本地模板", "starter")
-        return {"id": user_id, "name": "体验创作者", "email": None, "guest": True}
-
     def auth(self, mode, data, current, bucket):
         email = str(data.get("email", "")).strip().lower()
         password = data.get("password", "")
@@ -197,6 +185,8 @@ class Workspace:
                 row = c.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
             elif not row or not row["password"] or not hmac.compare_digest(password_hash(password,row["password"].split(":")[0]), row["password"]):
                 raise APIError(401, "邮箱或密码不正确")
+            if mode == "login" and current and current["guest"] and current["id"] != row["id"]:
+                c.execute("UPDATE projects SET owner=? WHERE owner=?", (row["id"],current["id"]))
             c.execute("DELETE FROM auth_attempts WHERE bucket=?", (bucket,))
             return user_json(row)
 
