@@ -8,7 +8,9 @@ from urllib.parse import quote, urlsplit
 
 
 class ModelProtocolError(ValueError):
-    pass
+    def __init__(self, message, *, repairable=False):
+        super().__init__(message)
+        self.repairable = repairable
 
 
 PROTOCOLS = {
@@ -134,4 +136,4 @@ def parse_project(api,raw):
         return project
     except ModelProtocolError:raise
     except (ValueError,UnicodeDecodeError,KeyError,IndexError,TypeError,AttributeError,RecursionError):
-        raise ModelProtocolError('模型没有返回有效的源码项目，请重试') from None
+        raise ModelProtocolError('模型返回的 JSON 或源码项目结构无效', repairable=True) from None

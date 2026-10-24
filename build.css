@@ -47,3 +47,5 @@
 @media(prefers-reduced-motion:reduce){.build-session *{animation:none!important;transition:none!important}.build-scene{--view-x:0deg!important;--view-y:0deg!important}}
 @media(min-width:801px) and (max-height:850px){.build-session .build-nav{height:72px}.build-layout{padding:28px 0 24px;gap:4.5vw}.build-session .build-content h1{font-size:36px;line-height:1.4;margin:16px 0 14px;letter-spacing:-1.8px}.build-session .build-intro{font-size:12px;margin-bottom:20px}.build-session .build-step{padding:9px 0;min-height:44px}.build-session .build-caption{margin-top:16px}.build-log{margin-top:13px;padding-bottom:11px}.build-side-foot{margin-top:10px}.build-atelier{height:calc(100svh - 180px);min-height:480px;max-height:610px}.build-session-footer{padding:17px 0 19px}.build-scene{inset:54px 0 110px}.build-shape{scale:.92}.build-float-one{top:5%}.build-float-two{bottom:8%}}
 .build-sheet-back{transform:translate3d(-64px,-58px,-85px) rotateZ(-7deg)}.build-sheet-middle{transform:translate3d(-27px,-26px,-35px) rotateZ(-2deg)}
+
+.build-error>small{display:block;margin-top:12px;font-size:10px;line-height:1.8;color:var(--text-secondary)}.build-error>div{flex-wrap:wrap}

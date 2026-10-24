@@ -255,7 +255,7 @@ class Handler(BaseHTTPRequestHandler):
         owner=user["id"]
         if not self.server.limiter.allow(('user',owner),20,80):raise APIError(429,"请求过于频繁，请稍后重试")
         large=method=='GET' and (parts[-1] in ('files','versions','preview','export') or len(parts)==3 and parts[:2]==['api','projects']) or method=='PUT' and parts[-1]=='files'
-        expensive=(method=='GET' and parts[-1] in ('files','versions','preview','export')) or parts[-1] in ('generate','build','restore') or parts==['api','model-connection'] and method=='PUT'
+        expensive=(method=='GET' and parts[-1] in ('files','versions','preview','export')) or parts[-1] in ('generate','resume','build','restore') or parts==['api','model-connection'] and method=='PUT'
         if expensive and (not self.server.limiter.allow(('expensive',owner),.5,8) or not self.server.limiter.allow(('expensive-all',),4,16)):
             raise APIError(429,"构建或预览请求过于频繁，请稍后重试")
         if large:
@@ -316,6 +316,7 @@ class Handler(BaseHTTPRequestHandler):
         if len(parts)>=3 and parts[:2]==["api","jobs"]:
             if len(parts)==3 and method=="GET":return self.send(200,{"job":self.ws.get_job(owner,parts[2])})
             if len(parts)==4 and parts[3]=="cancel" and method=="POST":self.body();return self.send(200,{"job":self.ws.cancel_job(owner,parts[2])})
+            if len(parts)==4 and parts[3]=='resume' and method=='POST':self.body();return self.send(202,{'job':self.ws.resume_job(owner,parts[2])})
         raise APIError(404,"接口不存在")
 
     def static(self, parts):
@@ -342,7 +343,7 @@ class Handler(BaseHTTPRequestHandler):
         self.response_slot=False
         try:self.dispatch()
         except (OSError,TimeoutError):pass
-        except APIError as error:self.send(error.status,{"error":error.message})
+        except APIError as error:self.send(error.status,{"error":error.message,**error.details})
         except BuildError as error:self.send(422,{"error":str(error)})
         except Exception:
             print("Request failed (details withheld)",file=sys.stderr)

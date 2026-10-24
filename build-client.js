@@ -16,7 +16,7 @@
           <div class="build-caption" aria-live="polite"><span data-build-message>正在读取服务器上的任务状态…</span><span data-progress-label>0 / 4</span></div>
           <div class="build-progress" role="progressbar" aria-label="已完成的构建阶段" aria-valuemin="0" aria-valuemax="4" aria-valuenow="0"><span></span></div>
           <details class="build-log"><summary>${icon('list-tree')}构建记录<span data-build-event-count>0 条</span>${icon('chevron-down')}</summary><ol data-build-events></ol></details>
-          <div class="build-error" hidden><p role="alert"></p><div><button class="btn btn-outline" type="button" data-build-reconnect hidden>重新连接</button><a class="btn btn-dark" href="#/plan/${escapeText(id)}">返回方案</a></div></div>
+          <div class="build-error" hidden><p role="alert"></p><div><button class="btn btn-outline" type="button" data-build-reconnect hidden>重新连接</button><button class="btn btn-dark" type="button" data-build-resume hidden>恢复生成</button><a class="btn btn-outline" href="#/plan/${escapeText(id)}">返回方案</a></div><small data-build-checkpoint></small></div>
           <div class="build-side-foot"><span>${icon('shield-check')}进度会保留，随时可以回来</span><button type="button" data-build-cancel>取消任务</button></div>
         </section>
         <section class="build-atelier" aria-label="等待时的交互构形画布">
@@ -69,10 +69,11 @@
     window.addEventListener('pagehide',stop,{once:true,signal:aborter.signal});
     function render(detail){
       job=detail.job;
+      projects=projects.map(project=>project.id===id?detail.project:project);
       const terminal=['failed','cancelled'].includes(job.status),complete=job.status==='completed';
       const phase=Math.max(0,Math.min(3,job.step-1));
       root.dataset.phase=phase;root.dataset.status=job.status;
-      select('[data-build-status]').textContent=complete?'新版本已就绪':terminal?(job.status==='failed'?'需要一点调整':'任务已取消'):job.status==='queued'?'任务已入队':'正在构建';
+      select('[data-build-status]').textContent=complete?'新版本已就绪':terminal?(job.status==='failed'?'生成遇到问题 · 进度已保留':'任务已中断 · 可稍后恢复'):job.status==='queued'?'任务已入队':'正在构建';
       select('[data-build-chapter]').textContent=chapters[phase];
       select('[data-build-art-copy]').textContent=terminal?'想法还在，可以随时重新出发。':complete?'准备好了，去体验你的作品。':artCopy[phase];
       root.querySelectorAll('[data-step]').forEach((element,index)=>{
@@ -80,7 +81,7 @@
         if(element.classList.contains('done')!==done)element.querySelector('.build-step-marker').innerHTML=done?icon('check'):String(index+1).padStart(2,'0');
         element.classList.toggle('done',done);element.classList.toggle('active',active);
         if(active)element.setAttribute('aria-current','step');else element.removeAttribute('aria-current');
-        element.querySelector('small').textContent=done?'已完成':active?'进行中':terminal&&index===job.step-1?'已停止':'等待中';
+        element.querySelector('small').textContent=done?'已完成':active?'进行中':terminal&&index===job.step-1?(job.status==='failed'?'未完成':'已中断'):'等待中';
       });
       const done=complete?4:Math.max(0,job.step-1);
       select('.build-progress>span').style.width=done*25+'%';select('.build-progress').setAttribute('aria-valuenow',done);
@@ -91,7 +92,8 @@
       cancel.hidden=complete||terminal;
       errorBox.hidden=!terminal;
       select('[data-build-reconnect]').hidden=true;
-      if(terminal){errorBox.querySelector('p').textContent=job.error||'任务未完成。你可以返回方案后重试。';setPaused(true);clearInterval(ticker);}
+      select('[data-build-resume]').hidden=!terminal||!job.canResume;
+      if(terminal){errorBox.querySelector('p').textContent=job.error||'任务未完成，可以恢复生成。';select('[data-build-checkpoint]').textContent=!job.canResume?'源码已有新修改，请返回方案基于最新内容生成。':job.checkpoint==='requirements'?'需求与生成会话已保留，将继续原任务。':'已保留生成源码，将从校验阶段继续。';setPaused(true);clearInterval(ticker);}
       formatElapsed();refreshIcons();
       if(complete&&!redirecting){redirecting=true;root.classList.add('build-complete');projects=projects.map(project=>project.id===id?detail.project:project);clearInterval(ticker);poll=setTimeout(()=>{if(root.isConnected&&!stopped)navigate('/workspace/'+id);},reduced.matches?0:850);}
       return terminal||complete;
@@ -108,6 +110,14 @@
       finally{fetching=false;}
     }
     select('[data-build-reconnect]').onclick=()=>{errorBox.hidden=true;setPaused(reduced.matches);run();};
+    select('[data-build-resume]').onclick=async()=>{
+      if(!job)return;const button=select('[data-build-resume]');button.disabled=true;
+      try{
+        if(job.requiresKey&&!await FormaModel.open())return;
+        await FormaAPI.request('/jobs/'+encodeURIComponent(job.id)+'/resume','POST',{});
+        errorBox.hidden=true;setPaused(reduced.matches);clearInterval(ticker);ticker=setInterval(()=>{if(!document.hidden)formatElapsed();},1000);await run();
+      }catch(error){if(error.code==='MODEL_KEY_REQUIRED')await FormaModel.open();else toast(error.message);}finally{button.disabled=false;}
+    };
     cancel.onclick=async()=>{if(!job||fetching)return;cancel.disabled=true;try{await FormaAPI.request('/jobs/'+encodeURIComponent(job.id)+'/cancel','POST',{});await run();}catch(error){toast(error.message);}finally{cancel.disabled=false;}};
     ticker=setInterval(()=>{if(!document.hidden)formatElapsed();},1000);
     await run();

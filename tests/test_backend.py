@@ -137,6 +137,38 @@ class BackendTest(unittest.TestCase):
         other=Client(self.base);self.assertEqual(other.call('/api/auth/register','POST',{'email':'other@example.invalid','password':'Other-test-password-92'})[0],200)
         self.assertEqual(other.call('/api/jobs/'+job['id'])[0],404)
 
+    def test_recovery_endpoint_auth_ownership_and_session_identity(self):
+        owner=self.bootstrap['user']['id']
+        payload={'mode':'starter','operation':'build','prompt':'恢复原项目'}
+        job,_=self.ws.prepare_job(owner,self.project,payload)
+        self.ws.cancel_job(owner,job)
+        anonymous=Client(self.base)
+        self.assertEqual(anonymous.call('/api/jobs/'+job+'/resume','POST',{})[0],401)
+        other=Client(self.base)
+        other.call('/api/auth/register','POST',{'email':'resume-other@example.invalid','password':'Other-test-password-92'})
+        self.assertEqual(other.call('/api/jobs/'+job+'/resume','POST',{})[0],404)
+        original=self.client.call('/api/jobs/'+job)[1]['job']
+        status,data,_=self.client.call('/api/jobs/'+job+'/resume','POST',{})
+        self.assertEqual(status,202)
+        complete=self.wait_job(data['job']['id'])
+        self.assertEqual(complete['status'],'completed',complete)
+        self.assertEqual(complete['sessionId'],original['sessionId'])
+
+    def test_fourth_task_api_returns_actionable_limit_and_cancel_frees_slot(self):
+        owner=self.bootstrap['user']['id'];projects=[self.project]
+        plan={'appName':'限额测试','goal':'阅读收藏夹','kind':'reading'}
+        for i in range(3):
+            project=self.ws.create_project(owner,{'name':f'并发 {i}','prompt':'测试'})['id']
+            self.ws.patch_project(owner,project,{'plan':plan});projects.append(project)
+        jobs=[self.ws.prepare_job(owner,p,{'mode':'starter','operation':'build','prompt':'生成'})[0] for p in projects[:3]]
+        status,data,_=self.client.call('/api/projects/'+projects[3]+'/generate','POST',{'mode':'starter','operation':'build','prompt':'第四个'})
+        self.assertEqual(status,429);self.assertEqual(data['code'],'USER_CONCURRENCY_LIMIT')
+        self.assertEqual(data['error'],'有 3 个任务在运行中，占用资源过多');self.assertEqual(len(data['tasks']),3)
+        self.assertIn('中断',data['hint'])
+        self.client.call('/api/jobs/'+jobs[0]+'/cancel','POST',{})
+        status,data,_=self.client.call('/api/projects/'+projects[3]+'/generate','POST',{'mode':'starter','operation':'build','prompt':'第四个'})
+        self.assertEqual(status,202);self.assertEqual(self.wait_job(data['job']['id'])['status'],'completed')
+
     def test_runtime_session_and_project_survive_reopening_database(self):
         self.client.call(self.root+'/runtime','PUT',{'key':'counter','value':12})
         token=next(iter(self.client.jar)).value
@@ -217,7 +249,7 @@ class BackendTest(unittest.TestCase):
         self.assertFalse(other.call('/api/model-connection')[1]['settings']['userModel']['ready'])
         self.assertEqual(other.call('/api/model-connection','PUT',{},headers={'Origin':'https://evil.invalid'})[0],403)
         self.assertEqual(Client(self.base).call('/api/model-connection')[0],401)
-        self.assertEqual(other.call(self.root+'/generate','POST',{'mode':'byok','operation':'build','prompt':'test'})[0],503)
+        self.assertEqual(other.call(self.root+'/generate','POST',{'mode':'byok','operation':'build','prompt':'test'})[0],404)
         self.assertNotIn('user-test-key-only',json.dumps(self.client.call('/api/bootstrap','POST',{})[1]))
 
     def test_user_connection_removal_logout_and_restart(self):

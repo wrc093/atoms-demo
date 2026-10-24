@@ -51,11 +51,11 @@
     const previousScroll=thread.scrollTop;
     if(signature!==threadSignature){threadSignature=signature;thread.innerHTML=messages.map(message=>message.role==='user'?`<div class="fm-user-message">${esc(message.text)}</div>`:`<div class="fm-server-response"><div class="fm-agent-title"><span class="fm-agent-mark">f</span>Forma<span>构建助手</span></div><p class="fm-response">${esc(message.text)}</p>${message.version?`<button class="fm-change-link" data-review="${message.version}">${icon('git-commit-horizontal')}查看源码版本<span>V${message.version}</span>${icon('arrow-up-right')}</button>`:''}</div>`).join('');
     if(job&&active())thread.insertAdjacentHTML('beforeend',`<div class="fm-server-job" role="status"><strong><i class="fm-job-spinner"></i>${job.mode!=='starter'?'模型正在构建':'示例构建'}</strong>${job.events.map(event=>`<p>${icon('check')}${esc(event.text)}</p>`).join('')}<button class="fm-quiet" data-action="cancel">取消任务</button></div>`);
-    if(job&&['failed','cancelled'].includes(job.status))thread.insertAdjacentHTML('beforeend',`<div class="fm-server-job fm-job-error" role="alert"><strong>${job.status==='failed'?'本次任务未完成':'任务已取消'}</strong><p>${esc(job.error)}</p><button class="fm-quiet" data-action="retry">${icon('rotate-ccw')}重试这次任务</button></div>`);
+    if(job&&['failed','cancelled'].includes(job.status))thread.insertAdjacentHTML('beforeend',`<div class="fm-server-job fm-job-error" role="alert"><strong>${job.status==='failed'?'本次任务未完成':'任务已取消'}</strong><p>${esc(job.error)}</p>${job.canResume?`<button class="fm-quiet" data-action="resume">${icon('play')}恢复生成</button>`:'<p>源码已有新修改，请基于当前内容发起新任务。</p>'}</div>`);
     thread.scrollTop=previousScroll;}
     buildButton.disabled=!!active()||!detail.project.dirty;
     buildButton.title=detail.project.dirty?'校验并运行已保存的源码':'预览已是最新版本';
-    product.querySelector('.fm-live').innerHTML=`<span></span>${active()?'构建中':job?.status==='failed'?'需要重试':'已就绪'}`;
+    product.querySelector('.fm-live').innerHTML=`<span></span>${active()?'构建中':job&&['failed','cancelled'].includes(job.status)?'可恢复生成':'已就绪'}`;
     product.querySelector('.fm-composer [type=submit]').disabled=!!active();
     product.querySelector('.fm-canvas-footer>span:first-child').innerHTML=`<span class="fm-tiny-dot"></span>${detail.project.currentVersion?'运行 V'+detail.project.currentVersion:'等待首次构建'}${detail.project.dirty?' · 有未构建草稿':''}`;
     product.querySelector('.fm-canvas-footer>span:last-child').textContent=detail.project.dirty?'草稿已保存 · 等待更新预览':'所有更改已保存';
@@ -110,7 +110,7 @@
         case 'warm':await generate('切换为暖橙色调，保留全部现有功能。');break;
         case 'rename':modal(`<span class="fm-modal-eyebrow">MAKE IT YOURS</span><h2 id="fm-dialog-title">给想法一个名字。</h2><form class="fm-server-rename"><label for="server-app-name">应用名称</label><input id="server-app-name" name="name" maxlength="32" required placeholder="例如：慢读"><button class="fm-primary" type="submit">生成名称修改${icon('arrow-right')}</button></form>`);break;
         case 'build':button.disabled=true;try{await build();}finally{renderThread();}break;
-        case 'retry':await generate(detail.job.prompt,{mode:detail.job.mode,operation:detail.job.operation});break;
+        case 'resume':if(hasDrafts())break;if(detail.job.requiresKey&&!await FormaModel.open())break;await FormaAPI.request('/jobs/'+encodeURIComponent(detail.job.id)+'/resume','POST',{});await load(false,true);break;
         case 'cancel':await FormaAPI.request('/jobs/'+detail.job.id+'/cancel','POST',{});await load(false,true);break;
         case 'mobile':case 'desktop':target.classList.toggle('fm-mobile',button.dataset.action==='mobile');product.querySelectorAll('.fm-device button').forEach(b=>b.classList.toggle('fm-selected',b===button));break;
         case 'theme':{const value=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=value;try{localStorage.setItem('forma-theme',value);}catch{}themeButton.setAttribute('aria-label',value==='dark'?'切换浅色模式':'切换深色模式');if(parent!==window)parent.postMessage({type:'forma-workspace-theme',value},location.origin);break;}
