@@ -16,6 +16,7 @@ function planPage(id) {
       <label class="plan-field"><span>描述你的想法</span><textarea name="goal" maxlength="6000" required rows="5" placeholder="你想为谁做一个怎样的体验？它需要实现什么？任何功能、布局和风格想法，都可以直接写在这里。">${escapeText(plan.goal)}</textarea></label>
       <div class="plan-generation-options"><label class="plan-field" for="plan-build-mode"><span>构建方式</span><div class="plan-select" data-ui="plan.mode.control"><select id="plan-build-mode" name="mode">${FormaModel.options(plan.mode)}</select>${icon('chevron-down').replace('<i ','<i data-ui="plan.mode.chevron" ')}</div></label></div>
       <div class="plan-connection" data-ui="plan.model.connection"><span class="plan-connection-icon">${icon('key-round')}</span><div><strong data-connection-title></strong><p data-connection-description></p></div><button class="btn btn-plain" type="button" data-model-connect>配置连接${icon('arrow-up-right')}</button></div>
+      <div class="plan-skills-entry" data-ui="plan.skills"><span>${icon('puzzle')}</span><div><strong>Skill 扩展 <small>可选</small></strong><p data-plan-skills-summary>用自己的方法主导创作，或只打磨某个细节。</p></div><button type="button" data-plan-skills>配置 Skill${icon('arrow-up-right')}</button></div>
       <p class="plan-open-note">${icon('message-circle')}不需要先选模板或给想法分类，直接描述你希望它成为的样子。</p>
     </section>
     <aside class="plan-preview-column"><div class="plan-preview-sticky"><div class="plan-section-title"><span>从描述，走向可体验的作品</span><span>IDEA → EXPERIENCE</span></div>
@@ -50,7 +51,7 @@ document.addEventListener('input',event=>{
   updatePlanPreview(form);
 });
 document.addEventListener('change',event=>{if(event.target.matches('#plan-form [name=mode]')&&event.target.value==='byok'&&!FormaAPI.settings?.userModel?.ready)FormaModel.open();});
-document.addEventListener('click',event=>{if(event.target.closest('[data-model-connect]'))FormaModel.open();});
+document.addEventListener('click',event=>{if(event.target.closest('[data-model-connect]'))FormaModel.open();const skillButton=event.target.closest('[data-plan-skills]');if(skillButton)FormaSkills.open(skillButton.closest('#plan-form').dataset.project).catch(error=>toast(error.message));});
 window.addEventListener('forma-user-model-selected',()=>{const form=document.querySelector('#plan-form');if(form){form.elements.mode.value='byok';form.elements.mode.dispatchEvent(new Event('input',{bubbles:true}));}});
 window.addEventListener('forma-model-connection-change',()=>{const form=document.querySelector('#plan-form');if(!form)return;const selected=form.elements.mode.value;form.elements.mode.innerHTML=FormaModel.options(selected);updatePlanPreview(form);});
 document.addEventListener('submit',async event=>{
@@ -64,4 +65,6 @@ document.addEventListener('submit',async event=>{
     project.plan=plan;await persistPlan(project,form);await FormaAPI.request('/projects/'+project.id+'/generate','POST',{prompt:plan.goal,mode:plan.mode,operation:'build'});navigate('/build/'+project.id);
   }catch(error){toast(error.message);}finally{if(button.isConnected)button.disabled=false;}
 });
-window.FormaPlan={mount(){const form=document.querySelector('#plan-form');if(form){updatePlanPreview(form);FormaModel.refresh().catch(()=>{});window.FormaUI?.animate(document.querySelector('.plan-open-stage'),[{opacity:0,transform:'translateY(14px)'},{opacity:1,transform:'translateY(0)'}],{duration:650});}}};
+function updatePlanSkills(id,count){const form=document.querySelector('#plan-form');if(form?.dataset.project===id)form.querySelector('[data-plan-skills-summary]').textContent=count?count+' 个插入点已配置 · 会用于模型生成与修复':'用自己的方法主导创作，或只打磨某个细节。';}
+window.addEventListener('forma-skills-changed',event=>{if(event.detail.projectId)updatePlanSkills(event.detail.projectId,event.detail.bindings.length);});
+window.FormaPlan={mount(){const form=document.querySelector('#plan-form');if(form){updatePlanPreview(form);FormaSkills.count(form.dataset.project).then(count=>updatePlanSkills(form.dataset.project,count)).catch(()=>{});FormaModel.refresh().catch(()=>{});window.FormaUI?.animate(document.querySelector('.plan-open-stage'),[{opacity:0,transform:'translateY(14px)'},{opacity:1,transform:'translateY(0)'}],{duration:650});}}};

@@ -34,8 +34,9 @@
   actions.append(themeButton,menu);
   document.addEventListener('click',e=>{if(!menu.contains(e.target)||e.target.closest('button'))menu.open=false;});
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&menu.open){menu.open=false;menu.querySelector('summary').focus();}});
-  const connectionButton=document.createElement('button');connectionButton.type='button';connectionButton.className='fm-quiet';connectionButton.dataset.action='model-settings';connectionButton.innerHTML=icon('key-round')+'模型与 API Key';menuItems.append(connectionButton);
+  const connectionButton=document.createElement('button');connectionButton.type='button';connectionButton.className='fm-quiet';connectionButton.dataset.action='model-settings';connectionButton.setAttribute('aria-label','模型与 API Key');connectionButton.innerHTML=icon('key-round')+'模型与 API Key';menuItems.append(connectionButton);
 
+  const skillButton=document.createElement('button');skillButton.type='button';skillButton.className='fm-quiet';skillButton.dataset.action='skills';skillButton.setAttribute('aria-label','Skill 扩展');skillButton.innerHTML=icon('puzzle')+'Skill 扩展';menuItems.append(skillButton);
   const ready=FormaAPI.ready;
   window.FormaWorkspace={id,ready,build,refresh:load,toast};
   function toast(text){const node=product.querySelector('.fm-toast');node.textContent=text;node.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>node.hidden=true,4300);}
@@ -114,6 +115,7 @@
         case 'cancel':await FormaAPI.request('/jobs/'+detail.job.id+'/cancel','POST',{});await load(false,true);break;
         case 'mobile':case 'desktop':target.classList.toggle('fm-mobile',button.dataset.action==='mobile');product.querySelectorAll('.fm-device button').forEach(b=>b.classList.toggle('fm-selected',b===button));break;
         case 'theme':{const value=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=value;try{localStorage.setItem('forma-theme',value);}catch{}themeButton.setAttribute('aria-label',value==='dark'?'切换浅色模式':'切换深色模式');if(parent!==window)parent.postMessage({type:'forma-workspace-theme',value},location.origin);break;}
+        case 'skills':await FormaSkills.open(id);break;
         case 'model-settings':await FormaModel.open();break;
         case 'plan':go('/plan/'+id);break;
         case 'new':go('/projects?create=1');break;

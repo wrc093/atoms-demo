@@ -20,6 +20,7 @@ from backend.compiler import BuildError, compile_preview
 from backend.core import APIError, Workspace
 from backend.security import RateLimiter
 from backend.model_adapters import catalog, protocol_name
+from backend.skills import SkillError
 
 ROOT = Path(__file__).resolve().parent
 
@@ -185,7 +186,7 @@ class Handler(BaseHTTPRequestHandler):
         try:length=int(self.headers.get("Content-Length","0"))
         except ValueError:raise APIError(400,"请求长度无效")
         path=unquote(urlsplit(self.path).path)
-        limit=7_000_000 if path.endswith('/files') else 600_000 if path.endswith('/runtime') else 16_000 if path.startswith('/api/auth/') else 128_000
+        limit=7_000_000 if path.endswith('/files') else 2_700_000 if path=='/api/skills' else 600_000 if path.endswith('/runtime') else 16_000 if path.startswith('/api/auth/') else 128_000
         if not 0<length<=limit:raise APIError(413,"请求内容过大或为空")
         try:
             raw=self.rfile.read(length)
@@ -254,8 +255,8 @@ class Handler(BaseHTTPRequestHandler):
         if not user or user["guest"]:raise APIError(401,"请先登录，再使用工作空间")
         owner=user["id"]
         if not self.server.limiter.allow(('user',owner),20,80):raise APIError(429,"请求过于频繁，请稍后重试")
-        large=method=='GET' and (parts[-1] in ('files','versions','preview','export') or len(parts)==3 and parts[:2]==['api','projects']) or method=='PUT' and parts[-1]=='files'
-        expensive=(method=='GET' and parts[-1] in ('files','versions','preview','export')) or parts[-1] in ('generate','resume','build','restore') or parts==['api','model-connection'] and method=='PUT'
+        large=method=='GET' and (parts[-1] in ('files','versions','preview','export') or len(parts)==3 and parts[:2] in (['api','projects'],['api','skills'])) or method=='PUT' and parts[-1]=='files' or parts==['api','skills'] and method=='POST'
+        expensive=(method=='GET' and parts[-1] in ('files','versions','preview','export')) or parts[-1] in ('generate','resume','build','restore') or parts==['api','model-connection'] and method=='PUT' or parts==['api','skills'] and method=='POST'
         if expensive and (not self.server.limiter.allow(('expensive',owner),.5,8) or not self.server.limiter.allow(('expensive-all',),4,16)):
             raise APIError(429,"构建或预览请求过于频繁，请稍后重试")
         if large:
@@ -265,6 +266,14 @@ class Handler(BaseHTTPRequestHandler):
             if method=="GET":return self.send(200,{"settings":self.ws.settings(owner),"catalog":catalog()})
             if method=="PUT":return self.send(200,{"settings":self.ws.set_user_model(owner,self.body())})
             if method=="DELETE":self.body();return self.send(200,{"settings":self.ws.clear_user_model(owner)})
+        if parts==['api','skills']:
+            if method=='GET':return self.send(200,self.ws.skill_library(owner))
+            if method=='POST':return self.send(201,{'skill':self.ws.upload_skill(owner,self.body())})
+        if len(parts)>=3 and parts[:2]==['api','skills']:
+            if len(parts)==3 and method=='GET':return self.send(200,{'skill':self.ws.get_skill(owner,parts[2])})
+            if len(parts)==3 and method=='DELETE':
+                self.body();self.ws.archive_skill(owner,parts[2]);return self.send(200,{'ok':True})
+            if len(parts)==4 and parts[3]=='export' and method=='GET':return self.send(200,self.ws.get_skill(owner,parts[2],export=True),'application/zip',{'Content-Disposition':'attachment; filename="forma-skill.zip"'})
         if parts==["api","projects"]:
             if method=="GET":return self.send(200,{"projects":self.ws.projects(owner)})
             if method=="POST":return self.send(201,{"project":self.ws.create_project(owner,self.body())})
@@ -273,6 +282,9 @@ class Handler(BaseHTTPRequestHandler):
             if not tail:
                 if method=="GET":return self.send(200,self.ws.detail(owner,project_id))
                 if method=="PATCH":return self.send(200,{"project":self.ws.patch_project(owner,project_id,self.body())})
+            if tail==['skills']:
+                if method=='GET':return self.send(200,self.ws.project_skills(owner,project_id))
+                if method=='PUT':return self.send(200,self.ws.project_skills(owner,project_id,self.body()))
             if tail==["files"]:
                 if method=="GET":return self.send(200,{"files":self.ws.list_files(owner,project_id)})
                 if method=="PUT":return self.send(200,{"file":self.ws.put_file(owner,project_id,self.body())})
@@ -345,6 +357,7 @@ class Handler(BaseHTTPRequestHandler):
         except (OSError,TimeoutError):pass
         except APIError as error:self.send(error.status,{"error":error.message,**error.details})
         except BuildError as error:self.send(422,{"error":str(error)})
+        except SkillError as error:self.send(error.status,{'error':str(error)})
         except Exception:
             print("Request failed (details withheld)",file=sys.stderr)
             self.send(500,{"error":"服务器暂时无法完成请求，请稍后重试"})

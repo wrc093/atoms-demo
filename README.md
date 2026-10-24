@@ -61,6 +61,20 @@ Key 不会出现在 API 响应、浏览器存储、日志或源码导出中。`.
 
 协议依据：[pi 多 Provider 实现](https://github.com/badlogic/pi-mono/tree/main/packages/ai)、[Gemini GenerateContent](https://ai.google.dev/api/generate-content)、[Azure Responses](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/responses?view=foundry-classic)、[DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode/)、[OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)。兼容模式使用 JSON Output，服务端仍独立校验结构和源码。
 
+## 自定义 Skill 扩展
+
+项目列表侧栏「我的 Skill」管理个人方法库；方案页「配置 Skill」以及工作台「更多项目操作 → Skill 扩展」选择这个项目要使用的方法。支持一个主导 Skill 统筹整体创作，再分别为视觉风格、应用架构、功能与交互、质量检查选择局部 Skill。所有插入点默认留空；配置不会限制用户的应用类型，也不会代替本次明确需求。
+
+可上传 UTF-8 Markdown（包括常见的 `SKILL.md` + YAML frontmatter），或包含一个 `SKILL.md` 入口及参考文件的 ZIP 包。支持单层包装目录，保留相对路径、未知元数据和文本参考资料；可查看包内文件、搜索、下载包、移出库以及重新导入。上传相同内容会复用已有记录，更新后的内容生成独立指纹，不会覆盖运行中任务的快照。页面提供可下载的 [Skill 模板](assets/skills/SKILL.md)。
+
+当前接入的是**指令与参考资料层**：选中的入口正文、文本参考文件、插入点范围、版本与 SHA-256 指纹进入统一模型上下文，平台模型和 BYOK 的所有已支持协议共用。主导 Skill 提供整体方法，局部 Skill 只在对应领域细化它。优先级为平台运行约束 → 本次明确需求 → 对应局部 Skill → 主导 Skill → 默认习惯。包里的 `allowed-tools` 等未知元数据原样保留，不代表授权执行工具；脚本与二进制附件保留供下载，不执行、不读取远程引用、不直接导入生成页面。真正的工具/脚本执行器是独立的后续扩展，当前不会声称已执行。
+
+项目选择与方案分开保存，自动保存名称或需求不会丢失 Skill。新生成和对话修改在启动时冻结 Skill 快照，自动修复沿用快照，中断/重启后的恢复也沿用原快照。修改配置或移出个人库仅影响后续新任务。基础示例无法遵循模型 Skill，因此选中 Skill 后会明确要求使用平台模型或自己的 Key。启用的 Skill 与文本参考资料将发给所选模型服务，未启用的个人库内容不会发送。
+
+上传限制：单包 2 MB、64 个文件，入口正文 64 KB；所选指令与文本参考总计 160 KB，连同项目源码不超过既有 350 KB 上下文上限，超限明确拒绝。个人库最多 40 条记录、16 MB，平台最多 2,000 条、128 MB，移出的历史记录仍占用存储配额；重新上传相同文件可恢复该记录。导入并发独立限为 2，禁止 ZIP 路径穿越、隐藏凭据文件、符号链接、加密包、重复路径和超量解压；包不解压到主机文件系统。个人库、预览、导出与项目绑定均要求登录并校验所属用户。
+
+插入点注册集中在 `backend/skills.py`：新增 `register_point('copywriting', '文案方法', '页面文案与语气')` 后，目录 API、前端选择、服务端校验与模型上下文自动支持该位置。注册应在服务启动时完成；插入点机制与模型协议、文件存储、生成器分离，无需在每个 Provider 中分别添加逻辑。
+
 ## 使用流程
 
 1. 新建项目，直接填写名称和需求，不需要选择应用类型。
@@ -106,6 +120,8 @@ Key 不会出现在 API 响应、浏览器存储、日志或源码导出中。`.
 - `backend/core.py`：SQLite、认证、项目/文件/版本、任务队列、兼容模型调用。
 - `backend/compiler.py`：源码校验、静态资源合并、预览隔离与运行数据桥。
 - `backend/templates.py`：可交互的离线模板。
+- `backend/skills.py`：Skill 包格式、个人库、插入点注册、权限校验与生成快照。
+- `skills.js`、`skills.css`：个人库与项目插入点的共享配置界面。
 - `backend/model_adapters.py`：服务目录、5 种协议的请求/认证与响应适配。
 - `backend-client.js`：前端 API 与会话初始化。
 - `app.js`、`plan.js`、`build-client.js`：多页产品流程、方案草稿、真实任务进度。
@@ -121,6 +137,8 @@ Key 不会出现在 API 响应、浏览器存储、日志或源码导出中。`.
 | `GET/PATCH /api/projects/:id` | 项目详情、方案和收藏 |
 | `GET/PUT /api/projects/:id/files` | 实际文件读取、保存、上传 |
 | `GET/PUT/DELETE /api/model-connection` | 查看、配置或移除当前用户的内存模型连接 |
+| `GET/POST /api/skills`、`GET/DELETE /api/skills/:id`、`GET .../export` | 个人 Skill 库、上传、查看、移出与导出 |
+| `GET/PUT /api/projects/:id/skills` | 查看或配置项目主导与局部 Skill 插入点 |
 | `POST /api/projects/:id/generate` | 创建模型或模板构建任务 |
 | `GET /api/jobs/:id`、`POST .../cancel`、`POST .../resume` | 真实进度、中断和恢复原生成会话 |
 | `POST /api/projects/:id/build` | 校验草稿、保存源码版本 |
