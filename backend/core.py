@@ -456,7 +456,7 @@ class Workspace:
             return self.job_dict(c,row)
 
     def active_jobs(self, c, owner):
-        return [dict(row) for row in c.execute("SELECT jobs.id,jobs.project,projects.name,jobs.status FROM jobs JOIN projects ON projects.id=jobs.project WHERE projects.owner=? AND jobs.status IN ('queued','running') ORDER BY jobs.created", (owner,))]
+        return [dict(row) for row in c.execute("SELECT jobs.id,jobs.project,projects.name,jobs.status FROM jobs JOIN projects ON projects.id=jobs.project WHERE projects.owner=? AND jobs.status='running' ORDER BY jobs.created", (owner,))]
 
     def check_user_capacity(self, c, owner):
         tasks = self.active_jobs(c, owner)

@@ -156,6 +156,7 @@ class RecoveryTest(unittest.TestCase):
     def test_user_limit_rejects_fourth_and_cancellation_frees_capacity(self):
         projects=[self.project]+[self.project_for(self.owner) for _ in range(3)]
         jobs=[self.ws.prepare_job(self.owner,project,self.payload)[0] for project in projects[:3]]
+        for job in jobs:self.ws.event(job,2,'正在运行的测试任务')
         with self.assertRaises(APIError) as error:self.ws.enqueue(self.owner,projects[3],self.payload)
         self.assertEqual(error.exception.status,429)
         self.assertEqual(error.exception.message,'有 3 个任务在运行中，占用资源过多')
@@ -163,13 +164,54 @@ class RecoveryTest(unittest.TestCase):
         self.ws.cancel_job(self.owner,jobs[0])
         admitted,_=self.ws.prepare_job(self.owner,projects[3],self.payload)
         self.assertEqual(self.ws.get_job(self.owner,admitted)['status'],'queued')
+        self.ws.event(admitted,2,'正在运行的测试任务')
         with self.assertRaises(APIError) as error:self.ws.resume_job(self.owner,jobs[0])
         self.assertEqual(error.exception.details['code'],'USER_CONCURRENCY_LIMIT')
+
+    def test_queued_tasks_do_not_count_as_running_user_capacity(self):
+        projects=[self.project]+[self.project_for(self.owner) for _ in range(3)]
+        jobs=[self.ws.prepare_job(self.owner,project,self.payload)[0] for project in projects]
+        self.assertEqual(len(jobs),4)
+        with self.ws.db() as c:self.assertEqual(self.ws.active_jobs(c,self.owner),[])
+
+    def test_live_concurrent_workers_and_cancelled_request_retirement(self):
+        projects=[self.project_for(self.owner) for _ in range(7)]
+        release=threading.Event();started=threading.Event();lock=threading.Lock()
+        counts={'active':0,'peak':0}
+        def delayed(*args):
+            with lock:
+                counts['active']+=1;counts['peak']=max(counts['peak'],counts['active'])
+                if counts['active']==3:started.set()
+            try:release.wait(3);return self.result
+            finally:
+                with lock:counts['active']-=1
+        def enqueue(project):
+            try:return self.ws.enqueue(self.owner,project,self.payload)
+            except APIError as error:return error
+        try:
+            with patch.object(self.ws,'generate',side_effect=delayed):
+                with ThreadPoolExecutor(6) as pool:results=list(pool.map(enqueue,projects[:6]))
+                self.assertTrue(started.wait(2))
+                with self.ws.db() as c:running=self.ws.active_jobs(c,self.owner)
+                self.assertEqual(len(running),3)
+                with self.assertRaises(APIError) as error:self.ws.enqueue(self.owner,projects[6],self.payload)
+                self.assertEqual(error.exception.details['code'],'USER_CONCURRENCY_LIMIT')
+                self.ws.cancel_job(self.owner,running[0]['id'])
+                admitted=self.ws.enqueue(self.owner,projects[6],self.payload)
+                self.assertEqual(admitted['status'],'queued')
+                release.set()
+                for job in [r for r in results if isinstance(r,dict)]+[admitted]:self.wait(job)
+                self.assertEqual(counts['peak'],3)
+        finally:release.set()
 
     def test_parallel_starts_cannot_exceed_three_and_other_user_is_independent(self):
         projects=[self.project_for(self.owner) for _ in range(6)]
         def prepare(project):
-            try:return self.ws.prepare_job(self.owner,project,self.payload)[0]
+            try:
+                with self.ws.worker_lock:
+                    job,_=self.ws.prepare_job(self.owner,project,self.payload)
+                    self.ws.event(job,2,'正在运行的测试任务')
+                    return job
             except APIError as error:return error
         with ThreadPoolExecutor(6) as pool:results=list(pool.map(prepare,projects))
         self.assertEqual(sum(isinstance(result,str) for result in results),3)

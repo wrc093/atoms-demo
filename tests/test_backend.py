@@ -161,6 +161,7 @@ class BackendTest(unittest.TestCase):
             project=self.ws.create_project(owner,{'name':f'并发 {i}','prompt':'测试'})['id']
             self.ws.patch_project(owner,project,{'plan':plan});projects.append(project)
         jobs=[self.ws.prepare_job(owner,p,{'mode':'starter','operation':'build','prompt':'生成'})[0] for p in projects[:3]]
+        for job in jobs:self.ws.event(job,2,'正在运行的测试任务')
         status,data,_=self.client.call('/api/projects/'+projects[3]+'/generate','POST',{'mode':'starter','operation':'build','prompt':'第四个'})
         self.assertEqual(status,429);self.assertEqual(data['code'],'USER_CONCURRENCY_LIMIT')
         self.assertEqual(data['error'],'有 3 个任务在运行中，占用资源过多');self.assertEqual(len(data['tasks']),3)
