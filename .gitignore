@@ -1,0 +1,11 @@
+.env
+.data/
+__pycache__/
+*.pyc
+.DS_Store
+.test-data/
+
+# Local overrides and generated preview captures
+.env.*
+!.env.example
+preview/

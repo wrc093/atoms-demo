@@ -1,0 +1,133 @@
+"""Bundle static source without executing generated code on the server."""
+import json
+import posixpath
+import re
+import shutil
+import subprocess
+import tempfile
+from html import escape
+from html.parser import HTMLParser
+from pathlib import Path, PurePosixPath
+
+
+class BuildError(ValueError):
+    pass
+
+
+def safe_path(value):
+    if not isinstance(value, str) or not value or len(value) > 240 or "\\" in value or "\0" in value:
+        raise BuildError("文件路径无效")
+    parts = value.split("/")
+    if any(part in ("", ".", "..") or part.startswith(".") for part in parts) or PurePosixPath(value).is_absolute():
+        raise BuildError("文件路径不能包含隐藏目录或上级目录")
+    return value
+
+
+def local_ref(value):
+    value = value.split("?")[0].split("#")[0]
+    if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", value) or value.startswith("//"):
+        raise BuildError("预览只支持项目内的脚本和样式，请移除外部依赖")
+    return safe_path(posixpath.normpath(value.lstrip("/")))
+
+
+class Bundler(HTMLParser):
+    def __init__(self, files):
+        super().__init__(convert_charrefs=False)
+        self.files, self.output, self.skip_script = files, [], False
+
+    def handle_starttag(self, tag, attrs):
+        values = dict(attrs)
+        if tag == "script" and values.get("src"):
+            path = local_ref(values["src"])
+            if path not in self.files:
+                raise BuildError(f"找不到脚本：{path}")
+            self.output.append('<script>' + self.files[path].replace('</script', '<\\/script') + '</script>')
+            self.skip_script = True
+            return
+        if tag == "link" and values.get("rel", "").lower() == "stylesheet":
+            path = local_ref(values.get("href", ""))
+            if path not in self.files:
+                raise BuildError(f"找不到样式：{path}")
+            self.output.append('<style>' + self.files[path].replace('</style', '<\\/style') + '</style>')
+            return
+        if not self.skip_script:
+            self.output.append(self.get_starttag_text())
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag):
+        if self.skip_script and tag == "script":
+            self.skip_script = False
+        elif not self.skip_script:
+            self.output.append(f'</{tag}>')
+
+    def handle_data(self, data):
+        if not self.skip_script:
+            self.output.append(data)
+
+    def handle_entityref(self, name):
+        if not self.skip_script:
+            self.output.append('&' + name + ';')
+
+    def handle_charref(self, name):
+        if not self.skip_script:
+            self.output.append('&#' + name + ';')
+
+    def handle_comment(self, data):
+        if not self.skip_script:
+            self.output.append('<!--' + data + '-->')
+
+
+def validate(files):
+    if not files or len(files) > 40:
+        raise BuildError("构建需要 1–40 个源码文件")
+    sources = {}
+    for item in files:
+        if not isinstance(item,dict):
+            raise BuildError("源码文件条目格式无效")
+        path = safe_path(item.get("path"))
+        text = item.get("text")
+        if not isinstance(text, str) or len(text.encode()) > 600_000:
+            raise BuildError("源码文件大小或格式无效")
+        if path in sources:
+            raise BuildError("源码路径重复")
+        sources[path] = text
+    if "index.html" not in sources or not re.search(r"<(?:html|body|main|div|section)\b", sources["index.html"], re.I):
+        raise BuildError("缺少有效的 index.html 入口")
+    if sum(len(text.encode()) for text in sources.values()) > 2_000_000:
+        raise BuildError("源码总大小超过 2 MB")
+    parser = Bundler(sources)
+    parser.feed(sources["index.html"])
+    parser.close()
+    node = shutil.which("node")
+    if node:
+        with tempfile.TemporaryDirectory(prefix="forma-check-") as folder:
+            for path, text in sources.items():
+                if not path.endswith(".js"):
+                    continue
+                filename = Path(folder) / "source.js"
+                filename.write_text(text)
+                result = subprocess.run([node, "--check", str(filename)], capture_output=True, text=True, timeout=8)
+                if result.returncode:
+                    # Omit host paths; this is a parser invocation, never execution.
+                    lines = result.stderr.splitlines()
+                    detail = next((line.strip() for line in lines if "SyntaxError:" in line), "JavaScript 语法错误")
+                    raise BuildError(f"{path}: {detail[:220]}")
+    return sources
+
+
+def compile_preview(files, runtime, token, read_only=False):
+    sources = {item["path"]: item["text"] for item in files}
+    parser = Bundler(sources)
+    parser.feed(sources.get("index.html", "<p>还没有可运行的页面。</p>"))
+    parser.close()
+    state = json.dumps(runtime, ensure_ascii=False).replace("<", "\\u003c")
+    nonce = json.dumps(token)
+    bridge = """(()=>{const state=INITIAL,token=TOKEN,pending=new Map();let serial=0;
+window.FormaStore={get:(key,fallback)=>Object.hasOwn(state,key)?structuredClone(state[key]):fallback,set:(key,value)=>{if(READONLY)return Promise.resolve();const id=++serial;state[key]=structuredClone(value);return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{pending.delete(id);reject(new Error('保存超时'))},12000);pending.set(id,{resolve,reject,timer});parent.postMessage({type:'forma-runtime-set',token,id,key,value},'*')})}};
+window.addEventListener('message',event=>{if(event.source!==parent||event.data?.type!=='forma-runtime-result'||event.data.token!==token)return;const task=pending.get(event.data.id);if(!task)return;clearTimeout(task.timer);pending.delete(event.data.id);event.data.error?task.reject(new Error(event.data.error)):task.resolve()});
+window.addEventListener('error',event=>parent.postMessage({type:'forma-runtime-error',token,message:String(event.message).slice(0,250)},'*'));
+})();""".replace("INITIAL", state).replace("TOKEN", nonce).replace("READONLY", "true" if read_only else "false")
+    policy = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'"
+    return '<!doctype html><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="' + escape(policy, quote=True) + '"><script>' + bridge + '</script>' + ''.join(parser.output)

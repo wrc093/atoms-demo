@@ -1,0 +1,79 @@
+#forma-design .fm-running-app{width:100%;height:100%;min-height:600px;display:block;border:0;background:white}
+#forma-design .fm-preview-target{height:max(600px,calc(100dvh - 235px));max-width:1400px}
+#forma-design .fm-generation-mode{max-width:170px;border:0;border-radius:5px;background:var(--wb-soft);color:var(--wb-muted);font:inherit;font-size:10px;padding:4px 7px;outline-offset:3px}
+#forma-design .fm-server-response{margin:20px 0 26px}
+#forma-design .fm-thread>.fm-user-message{white-space:pre-wrap;overflow-wrap:anywhere}
+#forma-design .fm-server-job{border:1px solid var(--wb-line);padding:13px;border-radius:8px;margin:20px 0;font-size:11px}
+#forma-design .fm-server-job strong{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:500}
+#forma-design .fm-server-job p{color:var(--wb-muted);display:flex;align-items:flex-start;gap:7px;font-size:10px;line-height:1.9;margin:10px 0;overflow-wrap:anywhere}
+#forma-design .fm-server-job p svg{width:11px;height:11px;margin-top:4px;flex-shrink:0}
+#forma-design .fm-job-spinner{height:11px;width:11px;border:1px solid var(--wb-line);border-top-color:var(--wb-ink);border-radius:50%;animation:fm-job-spin 1s linear infinite}
+#forma-design .fm-server-job .fm-quiet{font-size:10px;margin-top:8px;padding:5px 7px}
+#forma-design .fm-version-live{width:100%;height:270px;border:1px solid var(--wb-line);border-radius:8px;background:white;pointer-events:none}
+#forma-design .fm-server-diffs details{border-top:1px solid var(--wb-line);padding:12px 0;font-size:10px}
+#forma-design .fm-server-diffs summary{display:flex;align-items:center;gap:7px;cursor:pointer;overflow-wrap:anywhere}
+#forma-design .fm-server-diffs summary>svg{width:12px;height:12px;flex-shrink:0}
+#forma-design .fm-server-diffs summary small{margin-left:auto;color:var(--wb-muted);font-size:9px;white-space:nowrap}
+#forma-design .fm-source-compare{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+#forma-design .fm-source-compare>div{min-width:0;border:1px solid var(--wb-line);border-radius:5px;overflow:hidden}
+#forma-design .fm-source-compare span{display:block;background:var(--wb-soft);font-size:9px;padding:5px 8px;color:var(--wb-muted)}
+#forma-design .fm-source-compare pre{max-height:260px;overflow:auto;margin:0;padding:10px;font:9px/1.7 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+#forma-design .fm-server-diffs details>small{font-size:8px;color:var(--wb-muted)}
+@keyframes fm-job-spin{to{rotate:360deg}}
+@media(max-width:600px){#forma-design .fm-server-response .fm-agent-title,#forma-design .fm-server-response .fm-response,#forma-design .fm-thread>.fm-user-message{display:block}#forma-design .fm-server-response .fm-agent-title{display:flex}#forma-design .fm-thread{max-height:250px;overflow:auto;padding:0 13px}#forma-design .fm-thread>.fm-user-message{margin-top:16px}#forma-design .fm-running-app{min-height:580px}#forma-design .fm-preview-target{height:580px}#forma-design .fm-project-actions{gap:2px}#forma-design .fm-project-actions>.fm-quiet{font-size:0;gap:0}#forma-design .fm-project-name small{max-width:150px;font-size:8px}#forma-design .fm-source-compare{grid-template-columns:1fr}#forma-design .fm-server-response{margin-block:15px}#forma-design .fm-generation-mode{font-size:9px}}
+@media(prefers-reduced-motion:reduce){#forma-design .fm-job-spinner{animation:none}}
+/* The work belongs at the center; project chrome stays in one row. */
+#forma-design .fm-header{height:66px;padding:0 22px;gap:20px;overflow:visible;z-index:10;position:relative}
+#forma-design .fm-header .fm-brand{cursor:pointer;font-size:22px;flex-shrink:0}
+#forma-design .fm-header .fm-slash{opacity:.35;font-size:20px}
+#forma-design .fm-header .fm-project-name{font-size:13px;min-width:0;gap:9px}
+#forma-design .fm-header .fm-project-name>span:last-child{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:320px}
+#forma-design .fm-header .fm-project-icon{display:none}
+#forma-design .fm-header .fm-project-name small{font-size:10px;margin-top:2px;color:var(--wb-muted)}
+#forma-design .fm-project-actions{gap:7px;flex-shrink:0}
+#forma-design .fm-project-actions>.fm-quiet{font-size:11px;padding:7px 10px;gap:5px;border-radius:6px}
+#forma-design .fm-iconbutton.fm-theme-toggle{display:grid;height:30px;width:30px;border-radius:6px;color:var(--wb-muted)}
+#forma-design .fm-more-menu{position:relative;line-height:1;align-self:center;color:var(--wb-muted)}
+#forma-design .fm-more-menu summary{height:30px;width:30px;display:grid;place-items:center;border-radius:6px;cursor:pointer;list-style:none}
+#forma-design .fm-more-menu summary::-webkit-details-marker{display:none}
+#forma-design .fm-more-menu summary svg{width:17px;height:17px}
+#forma-design .fm-more-menu[open] summary,#forma-design .fm-more-menu summary:hover{background:var(--wb-soft);color:var(--wb-ink)}
+#forma-design .fm-more-items{position:absolute;top:39px;right:0;width:180px;padding:6px;display:grid;gap:2px;background:var(--wb-panel);border:1px solid var(--wb-line);border-radius:10px;box-shadow:0 12px 40px #00000016;animation:wb-toast .2s ease}
+#forma-design .fm-more-items button{font-size:12px!important;font-weight:400;justify-content:flex-start;background:transparent;color:var(--wb-ink);padding:10px;gap:8px!important;border-radius:5px;display:flex!important;height:auto;width:auto}
+#forma-design .fm-more-items button:disabled{opacity:.35;cursor:default}
+#forma-design .fm-more-items button:hover:not(:disabled){background:var(--wb-soft);box-shadow:none;filter:none}
+#forma-design .fm-more-items button svg{height:14px;width:14px}
+#forma-design .fm-workspace{--conversation-width:316px;grid-template-columns:var(--conversation-width) minmax(0,1fr);margin:0;border:0;border-radius:0;position:relative}
+#forma-design .fm-workspace.fs-chat-collapsed{grid-template-columns:0 minmax(0,1fr)}
+#forma-design .fm-conversation{background:var(--wb-panel)}
+#forma-design .fm-conversation-top{height:48px;padding:0 20px;font-size:12px;box-sizing:border-box}
+#forma-design .fm-thread{padding:23px 20px 16px}
+#forma-design .fm-thread>.fm-user-message{font-size:13px;line-height:1.9;padding:13px 15px;margin-left:16px;border:1px solid color-mix(in srgb,var(--wb-line) 70%,transparent);background:var(--wb-bg);border-radius:13px 13px 3px 13px}
+#forma-design .fm-server-response{margin:28px 0}
+#forma-design .fm-response{font-size:13px;line-height:1.95;color:var(--wb-ink)}
+#forma-design .fm-agent-title{font-size:12px;font-weight:500}
+#forma-design .fm-agent-title>span:last-child{font-size:10px;font-weight:400}
+#forma-design .fm-change-link{width:100%;justify-content:flex-start;padding:12px;border:1px solid var(--wb-line);border-radius:8px;background:var(--wb-bg);font-size:11px;gap:7px;margin-top:16px}
+#forma-design .fm-change-link>span{margin-left:auto;font-size:10px;color:var(--wb-muted)}
+#forma-design .fm-change-link>svg{width:14px;height:14px}
+#forma-design .fm-composer-area{padding:12px 14px 16px;background:linear-gradient(transparent,var(--wb-panel) 18%)}
+#forma-design .fm-suggestions{gap:5px;padding-bottom:11px}
+#forma-design .fm-suggestions button{font-size:10px;border:0;background:var(--wb-bg);border-radius:5px;padding:6px 8px}
+#forma-design .fm-composer{padding:13px;border-radius:12px;border-color:color-mix(in srgb,var(--wb-muted) 30%,var(--wb-line));box-shadow:0 4px 18px #00000004}
+#forma-design .fm-composer textarea{font-size:13px;line-height:1.8;min-height:63px}
+#forma-design .fm-composer button{width:29px;height:29px;border-radius:8px}
+#forma-design .fm-input-note{display:block;font-size:9px!important;margin-top:9px;line-height:1.5}
+#forma-design .fm-canvas-toolbar{height:48px;padding-inline:16px}
+#forma-design .fm-view-tabs button{font-size:11px;gap:6px;padding:6px 10px}
+#forma-design .fm-canvas{padding:24px;background:var(--wb-bg)}
+#forma-design .fm-canvas-footer{padding:0 24px 14px;background:var(--wb-bg);font-size:10px}
+#forma-design .fm-preview-target{border-radius:10px;box-shadow:0 8px 35px #00000006}
+#forma-design .fm-chat-resizer{position:absolute;left:calc(var(--conversation-width) - 4px);top:48px;bottom:0;width:8px;z-index:4;cursor:col-resize;touch-action:none;outline:none}
+#forma-design .fm-chat-resizer:after{content:'';position:absolute;left:3px;top:0;bottom:0;width:2px;background:var(--wb-muted);opacity:0;transition:opacity .2s}
+#forma-design .fm-chat-resizer:hover:after,#forma-design .fm-chat-resizer:focus-visible:after,#forma-design .fm-workspace.fm-resizing .fm-chat-resizer:after{opacity:.5}
+#forma-design .fm-workspace.fm-resizing:after{content:'';position:absolute;inset:48px 0 0 var(--conversation-width);z-index:3;cursor:col-resize}
+#forma-design .fm-workspace.fm-resizing{user-select:none}
+#forma-design .fs-chat-collapsed .fm-chat-resizer{display:none}
+@media(min-width:601px){#forma-design .fm-canvas{display:flex;flex-direction:column;overflow:hidden}#forma-design .fm-preview-target{height:100%;min-height:0;flex:1;width:100%}#forma-design .fm-running-app{height:100%;min-height:0}#forma-design .fm-canvas-zone{min-width:0}#forma-design .fm-workspace{min-height:0}}
+@media(max-width:1000px){#forma-design .fm-header{padding-inline:17px;gap:15px}#forma-design .fm-canvas{padding:16px}#forma-design .fm-canvas-footer{padding-inline:16px}#forma-design .fm-header .fm-project-name>span:last-child{max-width:220px}#forma-design .fm-address{display:none}}
+@media(max-width:600px){#forma-design .fm-header{height:60px;padding:0 12px;gap:12px}#forma-design .fm-header .fm-brand>span:last-child{display:none}#forma-design .fm-header .fm-slash{display:none}#forma-design .fm-header .fm-project-name{font-size:12px}#forma-design .fm-header .fm-project-name>span:last-child{max-width:150px}#forma-design .fm-header-spacer{min-width:0}#forma-design .fm-project-actions{gap:2px}#forma-design .fm-project-actions>.fm-quiet{font-size:0;padding:7px;gap:0}#forma-design .fm-project-actions>.fm-quiet>svg{width:15px;height:15px}#forma-design .fm-theme-toggle{display:none!important}#forma-design .fm-more-items button{font-size:12px!important}#forma-design .fm-workspace{margin:0}#forma-design .fm-chat-resizer{display:none}#forma-design .fm-canvas{padding:10px}#forma-design .fm-preview-target{height:560px;min-height:560px}#forma-design .fm-running-app{min-height:560px}#forma-design .fm-conversation-top{padding-inline:16px}#forma-design .fm-thread{padding:15px 16px;max-height:280px}#forma-design .fm-thread>.fm-user-message{font-size:12px}#forma-design .fm-response{font-size:12px}#forma-design .fm-canvas-toolbar{padding-inline:9px}#forma-design .fm-composer-area{padding-bottom:18px}}
