@@ -19,15 +19,14 @@
           <div class="build-error" hidden><p role="alert"></p><div><button class="btn btn-outline" type="button" data-build-reconnect hidden>重新连接</button><button class="btn btn-dark" type="button" data-build-resume hidden>恢复生成</button><a class="btn btn-outline" href="#/plan/${escapeText(id)}">返回方案</a></div><small data-build-checkpoint></small></div>
           <div class="build-side-foot"><span>${icon('shield-check')}进度会保留，随时可以回来</span><button type="button" data-build-cancel>取消任务</button></div>
         </section>
-        <section class="build-atelier" aria-label="等待时的交互构形画布">
+        <section class="build-atelier" aria-label="等待时的分层构形展示">
           <div class="build-atelier-top"><span><span class="build-tiny-cross">+</span>THE MAKING OF AN IDEA</span><button type="button" class="build-motion-toggle" data-build-motion aria-pressed="false" aria-label="暂停画布动画">${icon('pause')}</button></div>
           <div class="build-art-halo" aria-hidden="true"></div><div class="build-art-grid" aria-hidden="true"></div>
-          <div class="build-scene" data-build-scene>
+          <div class="build-scene">
             <div class="build-orbit build-orbit-one" aria-hidden="true"></div><div class="build-orbit build-orbit-two" aria-hidden="true"></div>
             <div class="build-shape" aria-hidden="true"><div class="build-sheet build-sheet-back"><span>THE POSSIBILITY</span></div><div class="build-sheet build-sheet-middle"><i></i><i></i><i></i><b></b></div><div class="build-sheet build-sheet-front"><div class="build-sheet-bar"><span><i></i><i></i><i></i></span><small>${name}</small>${icon('arrow-up-right')}</div><div class="build-sheet-body"><aside><b></b><i></i><i></i><i></i><i></i></aside><div class="build-sheet-main"><small>A SPACE FOR WHAT'S NEXT</small><strong>从一个念头，<br>到无限可能<span>。</span></strong><div class="build-sheet-rule"></div><div class="build-sheet-cards"><span><i></i><b></b><em></em></span><span><i></i><b></b><em></em></span><span><i></i><b></b><em></em></span></div></div></div><div class="build-scanline"></div></div></div>
             <div class="build-floating-label build-float-one" aria-hidden="true">${icon('sparkle')}一个想法，正在成形</div><div class="build-floating-label build-float-two" aria-hidden="true">${icon('layers-2')}从结构，到细节</div>
           </div>
-          <div class="build-art-controls"><div class="build-art-mode" role="group" aria-label="画布展示方式"><button type="button" data-build-view="layers" aria-pressed="true">${icon('layers-2')}构形</button><button type="button" data-build-view="flat" aria-pressed="false">${icon('app-window')}平面</button></div><span>${icon('mouse-pointer-2')}移动鼠标，换个角度</span></div>
           <div class="build-art-note"><div><span data-build-chapter>01 — THE BEGINNING</span><p data-build-art-copy>好的作品，从一个想法开始。</p></div><small>动态示意 · 最终界面由你的想法决定</small></div>
         </section>
       </div>
@@ -40,7 +39,6 @@
     const root=document.querySelector('.build-session');if(!root)return;
     let job,poll,ticker,stopped=false,fetching=false,redirecting=false,paused=false,liveMessage='',lastEventSignature='';
     const reduced=matchMedia('(prefers-reduced-motion: reduce)');
-    const scene=root.querySelector('[data-build-scene]');
     const motion=root.querySelector('[data-build-motion]');
     const select=selector=>root.querySelector(selector);
     const errorBox=select('.build-error');
@@ -58,12 +56,8 @@
     function setPaused(value){paused=value;root.classList.toggle('build-paused',paused);motion.setAttribute('aria-pressed',String(paused));motion.setAttribute('aria-label',paused?'播放画布动画':'暂停画布动画');motion.innerHTML=icon(paused?'play':'pause');refreshIcons();}
     setPaused(reduced.matches);
     motion.onclick=()=>setPaused(!paused);
-    root.querySelectorAll('[data-build-view]').forEach(button=>button.onclick=()=>{root.dataset.artView=button.dataset.buildView;root.querySelectorAll('[data-build-view]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));});
-    function point(event){if(reduced.matches||paused||event.pointerType==='touch')return;const box=scene.getBoundingClientRect();scene.style.setProperty('--view-x',((event.clientX-box.left)/box.width-.5)*9+'deg');scene.style.setProperty('--view-y',-((event.clientY-box.top)/box.height-.5)*7+'deg');}
-    function resetPoint(){scene.style.setProperty('--view-x','0deg');scene.style.setProperty('--view-y','0deg');}
-    scene.addEventListener('pointermove',point);scene.addEventListener('pointerleave',resetPoint);
     const aborter=new AbortController();
-    function stop(){stopped=true;clearTimeout(poll);clearInterval(ticker);aborter.abort();scene.removeEventListener('pointermove',point);scene.removeEventListener('pointerleave',resetPoint);document.removeEventListener('visibilitychange',visibility);}
+    function stop(){stopped=true;clearTimeout(poll);clearInterval(ticker);aborter.abort();document.removeEventListener('visibilitychange',visibility);}
     function visibility(){root.classList.toggle('build-background',document.hidden);if(!document.hidden&&!stopped){formatElapsed();if(!redirecting)run();}}
     document.addEventListener('visibilitychange',visibility);dispose=stop;
     window.addEventListener('pagehide',stop,{once:true,signal:aborter.signal});
