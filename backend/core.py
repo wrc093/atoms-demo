@@ -18,6 +18,7 @@ from pathlib import Path
 from .compiler import BuildError, safe_path, validate
 from .templates import starter
 from .providers import ProviderError, user_config, request_user_model
+from .model_adapters import ModelProtocolError, auth_headers, make_request, parse_project
 
 
 class APIError(Exception):
@@ -142,7 +143,7 @@ class Workspace:
     def settings(self, owner=None):
         with self.model_lock:
             connection = self.user_models.get(owner)
-            user_model = {"ready":bool(connection), "model":connection["model"] if connection else "", "baseUrl":connection["base_url"] if connection else "", "api":connection["api"] if connection else "chat_completions", "retention":"memory"}
+            user_model = {"ready":bool(connection), "model":connection["model"] if connection else "", "baseUrl":connection["base_url"] if connection else "", "api":connection["api"] if connection else "chat_completions", "provider":connection.get('provider','custom') if connection else 'custom', "retention":"memory"}
         return {"requiresLogin":False,"userModel":user_model,"modelReady": self.model_ready(), "model": self.config.get("model", "gpt-4o-mini"), "modes": ["starter"] + (["ai"] if self.model_ready() else []) + (["byok"] if user_model["ready"] else []), "storage": "sqlite"}
 
     def set_user_model(self, owner, data):
@@ -554,38 +555,21 @@ class Workspace:
         system += "\nJSON schema for your response: " + encode(schema)
         context=encode({"plan":{key:plan.get(key,"") for key in ("appName","goal")},"request":prompt,"current_files":files})
         if len(context.encode())>350_000:raise APIError(413,"源码上下文过大，请缩小项目后生成")
-        base=config.get("base_url","https://api.openai.com/v1").rstrip("/")
-        model=config.get("model","gpt-4o-mini")
-        if config.get("api","responses")=="chat_completions":
-            endpoint=base+"/chat/completions"
-            body={"model":model,"messages":[{"role":"system","content":system},{"role":"user","content":context}],"response_format":{"type":"json_object"},"max_tokens":12000}
-            if urllib.parse.urlsplit(base).hostname=="api.deepseek.com":body["thinking"]={"type":"disabled"}
-        else:
-            endpoint=base+"/responses"
-            body={"model":model,"instructions":system,"input":context,"store":False,"max_output_tokens":12000,"text":{"format":{"type":"json_schema","name":"forma_project","strict":True,"schema":schema}}}
-        request=urllib.request.Request(endpoint,data=encode(body).encode(),headers={"Authorization":"Bearer "+config["key"],"Content-Type":"application/json"},method="POST")
+        try:api,endpoint,body=make_request(config,system,context,schema)
+        except ModelProtocolError as error:raise APIError(502,str(error)) from None
+        request=urllib.request.Request(endpoint,data=encode(body).encode(),headers={**auth_headers(api,config['key']),"Content-Type":"application/json"},method="POST")
         # Never forward credentials to another origin via redirects.
         class NoRedirect(urllib.request.HTTPRedirectHandler):
             def redirect_request(self,*args,**kwargs):return None
         try:
             if config.get("user_supplied"):
-                raw=request_user_model(endpoint,body,config["key"])
+                raw=request_user_model(endpoint,body,config["key"],api)
             else:
                 with urllib.request.build_opener(NoRedirect).open(request,timeout=120) as response:
                     raw=response.read(3_000_001)
                     if len(raw)>3_000_000:raise APIError(502,"模型输出过大，请缩小需求")
-            result=json.loads(raw)
+            return parse_project(api,raw)
         except ProviderError as error:raise APIError(502,str(error)) from None
+        except ModelProtocolError as error:raise APIError(502,str(error)) from None
         except urllib.error.HTTPError as error:raise APIError(502,f"模型服务返回 HTTP {error.code}，请检查服务端配置或额度") from None
         except (urllib.error.URLError,TimeoutError):raise APIError(502,"模型连接失败或超时，请检查服务端网络") from None
-        try:
-            if config.get("api","responses")=="chat_completions":
-                if result["choices"][0].get("finish_reason") not in (None,"stop"):raise APIError(502,"模型输出未完成，请缩小需求后重试")
-                text=result["choices"][0]["message"]["content"]
-            else:
-                if result.get("status") not in (None,"completed"):raise APIError(502,"模型未完成生成，请缩小需求后重试")
-                text=''.join(content.get("text","") for item in result.get("output",[]) for content in item.get("content",[]) if content.get("type")=="output_text")
-            data=json.loads(text)
-            if not isinstance(data.get("summary"),str) or not isinstance(data.get("files"),list):raise ValueError()
-            return data
-        except (KeyError,IndexError,ValueError,TypeError):raise APIError(502,"模型没有返回有效的源码项目，请重试") from None

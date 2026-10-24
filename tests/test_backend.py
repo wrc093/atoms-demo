@@ -243,7 +243,7 @@ class BackendTest(unittest.TestCase):
         self.connect_user_model()
         self.ws.config={'key':'platform-test-key-only','model':'platform-model'}
         attempts=[];files=starter({'appName':'自由应用'})
-        def transport(url,body,key):
+        def transport(url,body,key,api):
             attempts.append((url,body,key))
             return json.dumps({'choices':[{'finish_reason':'stop','message':{'content':json.dumps({'summary':'使用用户模型生成','files':files})}}]}).encode()
         with patch('backend.core.request_user_model',side_effect=transport):

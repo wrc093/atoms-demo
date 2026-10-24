@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 from backend.compiler import BuildError, compile_preview
 from backend.core import APIError, Workspace
 from backend.security import RateLimiter
+from backend.model_adapters import catalog, protocol_name
 
 ROOT = Path(__file__).resolve().parent
 
@@ -53,7 +54,7 @@ def model_config():
         raise ValueError("Invalid model base URL")
     if parsed.scheme != "https" and parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
         raise ValueError("Remote model endpoints require HTTPS")
-    return {"key":key,"base_url":base,"model":os.environ.get("FORMA_MODEL", "gpt-4o-mini"),"api":os.environ.get("FORMA_MODEL_API", "responses")}
+    return {"key":key,"base_url":base,"model":os.environ.get("FORMA_MODEL", "gpt-4o-mini"),"api":protocol_name(os.environ.get("FORMA_MODEL_API", "responses"))}
 
 
 class Server(ThreadingHTTPServer):
@@ -261,7 +262,7 @@ class Handler(BaseHTTPRequestHandler):
             if not self.server.response_slots.acquire(blocking=False):raise APIError(429,'文件服务繁忙，请稍后重试')
             self.response_slot=True
         if parts==["api","model-connection"]:
-            if method=="GET":return self.send(200,{"settings":self.ws.settings(owner)})
+            if method=="GET":return self.send(200,{"settings":self.ws.settings(owner),"catalog":catalog()})
             if method=="PUT":return self.send(200,{"settings":self.ws.set_user_model(owner,self.body())})
             if method=="DELETE":self.body();return self.send(200,{"settings":self.ws.clear_user_model(owner)})
         if parts==["api","projects"]:

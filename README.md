@@ -22,9 +22,9 @@ python3 server.py
 
 ## 使用自己的 API Key
 
-在方案页的「构建方式」选择「使用自己的 API Key」，再填写服务、模型名称和 Key。支持 DeepSeek、OpenAI，以及提供 Chat Completions 或 Responses 接口的其他兼容服务；自定义地址需在「连接选项」填写完整 HTTPS Base URL。保存连接只校验配置，首次构建时才调用模型并验证 Key；费用由用户自己的服务账号承担。
+在方案页的「构建方式」选择「使用自己的 API Key」，再填写服务、模型名称和 Key。内置 DeepSeek、OpenAI、Anthropic/Claude、Google/Gemini、Azure OpenAI、OpenRouter、通义千问、Moonshot/Kimi、智谱/GLM、Groq、Mistral、xAI 和 MiniMax 预设。选择服务会自动匹配地址、建议模型名与协议，模型名仍可按自己的账号修改；自定义网关可在「连接选项」填写 HTTPS Base URL 并选择协议。保存连接只校验配置，首次构建时才调用模型并验证 Key；费用由用户自己的服务账号承担。
 
-Key 按当前用户隔离，只保存在本机服务进程内存中，不写入 SQLite、浏览器存储、项目方案或源码。响应只返回连接状态、服务地址和模型名称。退出账号、切换账号或重启服务会清除连接，也可以主动移除；已提交任务使用提交时的连接，移除影响后续任务。工作台「更多项目操作 → 模型与 API Key」可以管理连接，保存后切换到用户模型。
+Key 按当前用户隔离，只保存在本机服务进程内存中，不写入 SQLite、浏览器存储、项目方案或源码。响应仅返回服务、模型和协议等连接元信息。退出账号、切换账号或重启服务会清除连接，也可以主动移除；已提交任务使用提交时的连接，移除影响后续任务。工作台「更多项目操作 → 模型与 API Key」可以管理连接，保存后切换到用户模型。
 
 用户服务的地址会进行公网校验；请求绑定已校验的 IP 并保留 TLS 主机名与证书校验，拒绝重定向。本机 HTTP 代理通过 CONNECT 连接已校验的公网 IP；当 TUN 代理返回已知的虚拟 DNS 地址时，通过 Cloudflare DNS-over-HTTPS 获取真实地址后再校验，不向 DNS 服务发送 Key 或源码。
 
@@ -39,13 +39,27 @@ FORMA_MODEL_API=chat_completions
 FORMA_MODEL_API_KEY=填写你自己的Key
 ```
 
-也支持 `FORMA_MODEL_API=responses` 的 OpenAI Responses 协议。兼容服务的 Base URL 以服务文档为准，服务端会追加 `/chat/completions` 或 `/responses`。OpenAI 官方接口的 Base URL 为 `https://api.openai.com/v1`。
+目前支持 5 种协议，同样可通过服务端 `FORMA_MODEL_API` 配置：
+
+| 协议值 | 接口与认证 | Base URL 示例 |
+| --- | --- | --- |
+| `chat_completions` | `/chat/completions`，Bearer Key | `https://api.deepseek.com` |
+| `responses` | `/responses`，Bearer Key | `https://api.openai.com/v1` |
+| `anthropic-messages` | `/v1/messages`，`x-api-key` 和 Anthropic 版本头 | `https://api.anthropic.com/v1` |
+| `google-generative-ai` | `/models/模型:generateContent`，`x-goog-api-key` | `https://generativelanguage.googleapis.com/v1beta` |
+| `azure-openai-responses` | `/responses`，`api-key` | `https://你的资源.openai.azure.com/openai/v1` |
+
+Azure 模型名称填写部署名称，当前只支持 API Key，不包含 Entra ID 登录。后端也接受 pi 的 `openai-completions`、`openai-responses` 名称，映射到既有协议。Vertex、Bedrock 和 OAuth/订阅登录暂未接入，当前支持上述 API Key 协议。所有预设模型都是可修改的建议，不代表当前 Key 一定拥有该模型权限。
+
+实现参考本机 `pi-ai 0.85.0` 的 Provider 与 API 分层：服务目录和协议适配集中在 `backend/model_adapters.py`，前端从登录后的模型连接 API 获取目录。不同协议独立构造请求与解析响应，再统一交给源码校验与版本提交。Anthropic 使用带源码 Schema 的强制工具输出，兼容服务返回完整 JSON 文本时也可解析；Gemini 使用原生 JSON Schema 输出并排除思考文本；截断、安全拦截和无效项目会失败，不保存为成功版本。Gemini Key 放在请求头中，模型名编码成路径段，禁止将 Key 放入 URL。
+
+本轮使用本机模拟服务验证全部 5 种协议的真实 HTTP 请求、认证头、完整生成任务和源码快照，没有使用真实 Key 调用新增服务；实际服务的可用模型和额度以用户账号为准。
 
 在这台机器上，已根据用户授权配置 `FORMA_MODEL_PI_PROVIDER=deepseek`：服务端仅从 `~/.pi/agent/auth.json` 读取该名称的 `api_key` 条目。`.env` 保存的是凭据引用，没有复制 Key。换机器运行时需要配置自己的 Key，或显式指定自己的 pi 凭据来源；不会自动扫描其他凭据。
 
 Key 不会出现在 API 响应、浏览器存储、日志或源码导出中。`.env` 和 `.data/` 已加入 `.gitignore`，也不能经静态文件接口访问。变更服务端配置后需要重启。
 
-协议依据：[DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode/)、[OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)。兼容模式使用 JSON Output，服务端仍独立校验结构和源码。
+协议依据：[pi 多 Provider 实现](https://github.com/badlogic/pi-mono/tree/main/packages/ai)、[Gemini GenerateContent](https://ai.google.dev/api/generate-content)、[Azure Responses](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/responses?view=foundry-classic)、[DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode/)、[OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)。兼容模式使用 JSON Output，服务端仍独立校验结构和源码。
 
 ## 使用流程
 
@@ -86,6 +100,7 @@ Key 不会出现在 API 响应、浏览器存储、日志或源码导出中。`.
 - `backend/core.py`：SQLite、认证、项目/文件/版本、任务队列、兼容模型调用。
 - `backend/compiler.py`：源码校验、静态资源合并、预览隔离与运行数据桥。
 - `backend/templates.py`：可交互的离线模板。
+- `backend/model_adapters.py`：服务目录、5 种协议的请求/认证与响应适配。
 - `backend-client.js`：前端 API 与会话初始化。
 - `app.js`、`plan.js`、`build-client.js`：多页产品流程、方案草稿、真实任务进度。
 - `workbench-server.js`、`workbench-files.js`：运行预览、对话生成、源码版本、CodeMirror 与服务器文件。

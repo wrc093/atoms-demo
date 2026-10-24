@@ -6,6 +6,7 @@ import socket
 import ssl
 import urllib.request
 from urllib.parse import urlsplit, urlencode
+from .model_adapters import ModelProtocolError, PROVIDERS, auth_headers, normalize_base, protocol_name
 
 
 class ProviderError(ValueError):
@@ -60,19 +61,22 @@ def parse_endpoint(value):
 def user_config(data, previous=None):
     base = data.get("baseUrl", "")
     parsed, port = parse_endpoint(base)
-    public_addresses(parsed.hostname, port)
-    model, api = data.get("model"), data.get("api", "chat_completions")
+    model = data.get("model")
+    try:api=protocol_name(data.get('api','chat_completions'))
+    except ModelProtocolError as error:raise ProviderError(str(error)) from None
     if not isinstance(model, str) or not 1 <= len(model.strip()) <= 160 or any(ord(char) < 33 for char in model.strip()):
         raise ProviderError("请填写有效的模型名称")
-    if api not in ("chat_completions", "responses"):
-        raise ProviderError("请选择支持的模型协议")
-    base = base.rstrip("/")
+    base = normalize_base(base,api)
     key = data.get("apiKey")
     if not key and previous and previous["base_url"] == base:
         key = previous["key"]
     if not isinstance(key, str) or not 8 <= len(key.strip()) <= 4096 or any(not 33 <= ord(char) <= 126 for char in key.strip()):
         raise ProviderError("请填写有效的 API Key；更换服务地址时需要重新填写")
-    return {"key":key.strip(), "base_url":base, "model":model.strip(), "api":api, "user_supplied":True}
+    public_addresses(parsed.hostname, port)
+    provider=data.get('provider')
+    if not isinstance(provider,str) or provider not in PROVIDERS:
+        provider=next((name for name,preset in PROVIDERS.items() if preset['baseUrl']==base),'custom')
+    return {"key":key.strip(), "base_url":base, "model":model.strip(), "api":api, "provider":provider, "user_supplied":True}
 
 
 class PinnedHTTPS(http.client.HTTPSConnection):
@@ -106,14 +110,14 @@ class PinnedHTTPS(http.client.HTTPSConnection):
             raise
 
 
-def request_user_model(endpoint, body, key):
+def request_user_model(endpoint, body, key, api='chat_completions'):
     parsed, port = parse_endpoint(endpoint)
     addresses = public_addresses(parsed.hostname, port)
     connection = PinnedHTTPS(parsed.hostname, port, addresses[0])
     try:
         hostname = "["+parsed.hostname+"]" if ":" in parsed.hostname else parsed.hostname
         authority = hostname if port == 443 else hostname+":"+str(port)
-        connection.request("POST", parsed.path or "/", body=json.dumps(body, ensure_ascii=False).encode(), headers={"Authorization":"Bearer "+key,"Content-Type":"application/json","Host":authority})
+        connection.request("POST", parsed.path or "/", body=json.dumps(body, ensure_ascii=False).encode(), headers={**auth_headers(api,key),"Content-Type":"application/json","Host":authority})
         response = connection.getresponse()
         # No redirects: never send the key to a destination selected by a response.
         if response.status != 200:
