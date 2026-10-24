@@ -1,4 +1,4 @@
-/* A small software-rendered sculpture. Pointer drag, spring return, form unfolding. */
+/* An autonomous idea-to-interface presentation with spring-based unfolding. */
 (() => {
   let dispose = () => {};
   function mount() {
@@ -10,10 +10,12 @@
     if (!context) return;
     const surface = stage.querySelector('.sculpture-interaction');
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const prompt = document.querySelector('#home-prompt textarea');
+    const playback = stage.querySelector('[data-sculpture-pause]');
+    const cycleDuration = 5200;
     const state = { x: -.25, y: -.43, targetX: -.25, targetY: -.43, vx: 0, vy: 0, morph: 0, targetMorph: 0, velocity: 0 };
-    let width = 1, height = 1, frame = 0, visible = true, dragging = false, dragged = false;
-    let pointerX = 0, pointerY = 0, lastTime = 0, resting = 0;
+    let width = 1, height = 1, frame = 0, visible = true, disposed = false;
+    let lastTime = 0, resting = 0, cycleTimer = 0, remaining = cycleDuration, deadline = 0;
+    let manuallyPaused = false, reducedOverride = false;
     let dark = document.documentElement.dataset.theme === 'dark';
     const lerp = (a, b, t) => a + (b - a) * t;
     const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
@@ -83,31 +85,53 @@
       draw();
       const movement=Math.abs(state.vx)+Math.abs(state.vy)+Math.abs(state.velocity)+Math.abs(state.morph-state.targetMorph)+Math.abs(state.x-state.targetX)+Math.abs(state.y-state.targetY);
       resting=movement<.0002?resting+1:0;
-      if(visible&&!document.hidden&&(dragging||resting<12))frame=requestAnimationFrame(tick);
+      if(!disposed&&visible&&!document.hidden&&resting<12)frame=requestAnimationFrame(tick);
     }
-    function wake() {if(reduced.matches){state.x=state.targetX;state.y=state.targetY;state.morph=state.targetMorph;state.vx=state.vy=state.velocity=0;draw();return;}resting=0;if(!frame&&visible&&!document.hidden)frame=requestAnimationFrame(tick);}
+    function wake() {if(disposed)return;if(reduced.matches){state.x=state.targetX;state.y=state.targetY;state.morph=state.targetMorph;state.vx=state.vy=state.velocity=0;draw();return;}if(isPaused())return;resting=0;if(!frame&&visible&&!document.hidden)frame=requestAnimationFrame(tick);}
     function mode(value) {
       state.targetMorph=value;
+      state.targetX=value ? -.08 : -.25;
+      state.targetY=value ? .08 : -.43;
       stage.dataset.mode=value?'interface':'idea';
-      stage.querySelectorAll('[data-sculpture-mode]').forEach(button=>button.setAttribute('aria-pressed',String(Number(button.dataset.sculptureMode)===value)));
-      stage.querySelector('.sculpture-caption').textContent=value?'从一个念头，到清晰的界面。':'拖动探索，让想法换个角度。';
-      if(reduced.matches){state.morph=value;state.x=state.targetX;state.y=state.targetY;draw()}else wake();
+      const caption=stage.querySelector('.sculpture-caption');
+      caption.textContent=value?'从灵感，走向清晰的界面。':'一个念头，正在成形。';
+      if(!reduced.matches)caption.animate([{opacity:0,transform:'translateY(4px)'},{opacity:1,transform:'translateY(0)'}],{duration:700,easing:'cubic-bezier(.2,.7,.2,1)'});
+      wake();
     }
+    const isPaused=()=>manuallyPaused||(reduced.matches&&!reducedOverride);
+    function stopCycle(){
+      if(cycleTimer){remaining=Math.max(0,deadline-performance.now());clearTimeout(cycleTimer);cycleTimer=0;}
+    }
+    function syncCycle(){
+      const paused=isPaused();
+      playback.setAttribute('aria-pressed',String(paused));
+      playback.setAttribute('aria-label',paused?'播放自动展示':'暂停自动展示');
+      playback.innerHTML=paused?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 11 7-11 7Z"/></svg>':'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg>';
+      stage.dataset.playing=String(!paused&&visible&&!document.hidden);
+      if(disposed||paused||!visible||document.hidden){stopCycle();cancelAnimationFrame(frame);frame=0;stage.querySelector('.sculpture-caption').getAnimations().forEach(animation=>animation.pause());return;}
+      stage.querySelector('.sculpture-caption').getAnimations().forEach(animation=>animation.play());wake();
+      if(cycleTimer)return;
+      deadline=performance.now()+remaining;
+      cycleTimer=setTimeout(()=>{
+        cycleTimer=0;remaining=cycleDuration;
+        if(disposed||!stage.isConnected)return;
+        if(isPaused()||!visible||document.hidden){remaining=0;syncCycle();return;}
+        mode(state.targetMorph?0:1);syncCycle();
+      },remaining);
+    }
+    function togglePlayback(){
+      if(isPaused()){manuallyPaused=false;reducedOverride=true;}else manuallyPaused=true;
+      syncCycle();
+    }
+    function motionPreference(){reducedOverride=false;syncCycle();wake();}
     function resize(){const box=surface.getBoundingClientRect();width=box.width;height=box.height;const ratio=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(width*ratio);canvas.height=Math.round(height*ratio);context.setTransform(ratio,0,0,ratio,0,0);draw();wake();}
-    function pointerDown(event){dragging=true;dragged=false;pointerX=event.clientX;pointerY=event.clientY;surface.setPointerCapture(event.pointerId);surface.classList.add('is-dragging');}
-    function pointerMove(event){if(!dragging)return;const dx=event.clientX-pointerX,dy=event.clientY-pointerY;if(Math.abs(dx)+Math.abs(dy)>2)dragged=true;pointerX=event.clientX;pointerY=event.clientY;state.targetY=clamp(state.targetY+dx*.009,-1.2,1.2);state.targetX=clamp(state.targetX+dy*.008,-.9,.8);if(reduced.matches){state.y=state.targetY;state.x=state.targetX;draw()}else wake();}
-    function pointerUp(){if(!dragging)return;dragging=false;surface.classList.remove('is-dragging');state.targetX=-.25;state.targetY=-.43;wake();}
-    function surfaceClick(event){if(event.detail===0||!dragged)mode(state.targetMorph?0:1);dragged=false;}
-    function modeClick(event){const button=event.target.closest('[data-sculpture-mode]');if(button)mode(Number(button.dataset.sculptureMode));}
-    function input(){mode(prompt.value.trim().length>3?1:0);}
-    function visibility(){if(!document.hidden)wake();else{cancelAnimationFrame(frame);frame=0;}}
-    surface.addEventListener('pointerdown',pointerDown);surface.addEventListener('pointermove',pointerMove);surface.addEventListener('pointerup',pointerUp);surface.addEventListener('pointercancel',pointerUp);surface.addEventListener('click',surfaceClick);
-    stage.addEventListener('click',modeClick);prompt?.addEventListener('input',input);document.addEventListener('visibilitychange',visibility);
+    function visibility(){syncCycle();if(!document.hidden)wake();else{cancelAnimationFrame(frame);frame=0;}}
+    playback.addEventListener('click',togglePlayback);document.addEventListener('visibilitychange',visibility);reduced.addEventListener('change',motionPreference);
     const resizeObserver=new ResizeObserver(resize);resizeObserver.observe(surface);
-    const viewObserver=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;if(visible)wake();else{cancelAnimationFrame(frame);frame=0;}});viewObserver.observe(stage);
+    const viewObserver=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;syncCycle();if(visible)wake();else{cancelAnimationFrame(frame);frame=0;}});viewObserver.observe(stage);
     const themeObserver=new MutationObserver(()=>{dark=document.documentElement.dataset.theme==='dark';draw()});themeObserver.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
-    resize();if(prompt?.value.trim().length>3)mode(1);
-    dispose=()=>{cancelAnimationFrame(frame);resizeObserver.disconnect();viewObserver.disconnect();themeObserver.disconnect();document.removeEventListener('visibilitychange',visibility);prompt?.removeEventListener('input',input);};
+    resize();syncCycle();
+    dispose=()=>{disposed=true;stopCycle();cancelAnimationFrame(frame);resizeObserver.disconnect();viewObserver.disconnect();themeObserver.disconnect();playback.removeEventListener('click',togglePlayback);document.removeEventListener('visibilitychange',visibility);reduced.removeEventListener('change',motionPreference);};
   }
   window.FormaSculpture={mount};
 })();
