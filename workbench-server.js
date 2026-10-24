@@ -33,6 +33,7 @@
   actions.append(themeButton,menu);
   document.addEventListener('click',e=>{if(!menu.contains(e.target)||e.target.closest('button'))menu.open=false;});
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&menu.open){menu.open=false;menu.querySelector('summary').focus();}});
+  const connectionButton=document.createElement('button');connectionButton.type='button';connectionButton.className='fm-quiet';connectionButton.dataset.action='model-settings';connectionButton.innerHTML=icon('key-round')+'模型与 API Key';menuItems.append(connectionButton);
 
   const ready=FormaAPI.ready;
   window.FormaWorkspace={id,ready,build,refresh:load,toast};
@@ -48,7 +49,7 @@
     const signature=JSON.stringify([messages,job]);
     const previousScroll=thread.scrollTop;
     if(signature!==threadSignature){threadSignature=signature;thread.innerHTML=messages.map(message=>message.role==='user'?`<div class="fm-user-message">${esc(message.text)}</div>`:`<div class="fm-server-response"><div class="fm-agent-title"><span class="fm-agent-mark">f</span>Forma<span>构建助手</span></div><p class="fm-response">${esc(message.text)}</p>${message.version?`<button class="fm-change-link" data-review="${message.version}">${icon('git-commit-horizontal')}查看源码版本<span>V${message.version}</span>${icon('arrow-up-right')}</button>`:''}</div>`).join('');
-    if(job&&active())thread.insertAdjacentHTML('beforeend',`<div class="fm-server-job" role="status"><strong><i class="fm-job-spinner"></i>${job.mode==='ai'?'模型正在构建':'本地模板构建'}</strong>${job.events.map(event=>`<p>${icon('check')}${esc(event.text)}</p>`).join('')}<button class="fm-quiet" data-action="cancel">取消任务</button></div>`);
+    if(job&&active())thread.insertAdjacentHTML('beforeend',`<div class="fm-server-job" role="status"><strong><i class="fm-job-spinner"></i>${job.mode!=='starter'?'模型正在构建':'示例构建'}</strong>${job.events.map(event=>`<p>${icon('check')}${esc(event.text)}</p>`).join('')}<button class="fm-quiet" data-action="cancel">取消任务</button></div>`);
     if(job&&['failed','cancelled'].includes(job.status))thread.insertAdjacentHTML('beforeend',`<div class="fm-server-job fm-job-error" role="alert"><strong>${job.status==='failed'?'本次任务未完成':'任务已取消'}</strong><p>${esc(job.error)}</p><button class="fm-quiet" data-action="retry">${icon('rotate-ccw')}重试这次任务</button></div>`);
     thread.scrollTop=previousScroll;}
     buildButton.disabled=!!active()||!detail.project.dirty;
@@ -78,6 +79,7 @@
   function hasDrafts(){if(window.FormaFiles?.dirty()){toast('编辑器还有未保存的草稿，请先保存，再生成或恢复版本。');return true;}return false;}
   async function generate(prompt,options={}){
     if(!prompt.trim()||active()||hasDrafts())return;
+    if((options.mode||mode.value)==='byok'&&!FormaAPI.settings?.userModel?.ready){if(!await FormaModel.open())return;}
     try{await FormaAPI.request(api('/generate'),'POST',{prompt,mode:options.mode||mode.value,operation:options.operation||'modify'});await load(false,true);product.querySelector('.fm-composer textarea').value='';}catch(error){toast(error.message);}
   }
   async function build(){
@@ -111,6 +113,7 @@
         case 'cancel':await FormaAPI.request('/jobs/'+detail.job.id+'/cancel','POST',{});await load(false,true);break;
         case 'mobile':case 'desktop':target.classList.toggle('fm-mobile',button.dataset.action==='mobile');product.querySelectorAll('.fm-device button').forEach(b=>b.classList.toggle('fm-selected',b===button));break;
         case 'theme':{const value=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=value;try{localStorage.setItem('forma-theme',value);}catch{}themeButton.setAttribute('aria-label',value==='dark'?'切换浅色模式':'切换深色模式');if(parent!==window)parent.postMessage({type:'forma-workspace-theme',value},location.origin);break;}
+        case 'model-settings':await FormaModel.open();break;
         case 'plan':go('/plan/'+id);break;
         case 'new':go('/projects?create=1');break;
         case 'projects':go('/projects');break;
@@ -137,10 +140,13 @@
     try{const task=(runtimeQueues.get(message.key)||Promise.resolve()).catch(()=>{}).then(()=>FormaAPI.request(api('/runtime'),'PUT',{key:message.key,value:message.value}));runtimeQueues.set(message.key,task);await task;if(runtimeQueues.get(message.key)===task)runtimeQueues.delete(message.key);source.postMessage({type:'forma-runtime-result',token,id:message.id},'*');}
     catch(error){source.postMessage({type:'forma-runtime-result',token,id:message.id,error:error.message},'*');toast('应用数据未能保存：'+error.message);}
   });
+  window.addEventListener('forma-user-model-selected',()=>{mode.value='byok';});
+  window.addEventListener('forma-model-connection-change',()=>{mode.innerHTML=FormaModel.options(mode.value||'byok');});
+  mode.addEventListener('change',()=>{if(mode.value==='byok'&&!FormaAPI.settings?.userModel?.ready)FormaModel.open();});
   window.addEventListener('pagehide',()=>clearTimeout(pollTimer));
   ready.then(async data=>{
-    mode.innerHTML=`${data.settings.modelReady?`<option value="ai">${esc(data.settings.model)}</option>`:''}<option value="starter">本地模板</option>`;
-    await load();mode.value=detail.project.plan.mode|| (data.settings.modelReady?'ai':'starter');
+    await load();
+    mode.innerHTML=FormaModel.options(detail.project.plan.mode|| (data.settings.modelReady?'ai':'byok'));
     icons();
   }).catch(error=>{thread.innerHTML='<p class="fm-response" role="alert">'+esc(error.message)+'</p>';toast(error.message);});
 })();

@@ -129,18 +129,24 @@ class Handler(BaseHTTPRequestHandler):
             self.body();headers={}
             if not user:
                 user=self.ws.guest();token=self.ws.new_session(user["id"]);headers["Set-Cookie"]=self.session_cookie(token)
-            return self.send(200,{"user":user,"projects":self.ws.projects(user["id"]),"settings":self.ws.settings(),"apiVersion":1},headers=headers)
+            return self.send(200,{"user":user,"projects":self.ws.projects(user["id"]),"settings":self.ws.settings(user["id"]),"apiVersion":1},headers=headers)
         if len(parts)==3 and parts[:2]==["api","auth"] and method=="POST":
             data=self.body();action=parts[2]
             if action=="logout":
+                if user:self.ws.clear_user_model(user["id"])
                 self.ws.logout(token);return self.send(200,{"ok":True},headers={"Set-Cookie":self.session_cookie("",True)})
             if action=="guest":new_user=user or self.ws.guest()
             elif action in ("register","login"):new_user=self.ws.auth(action,data,user,self.client_address[0])
             else:raise APIError(404,"接口不存在")
+            if user and user["id"]!=new_user["id"]:self.ws.clear_user_model(user["id"])
             self.ws.logout(token);new_token=self.ws.new_session(new_user["id"])
-            return self.send(200,{"user":new_user,"projects":self.ws.projects(new_user["id"]),"settings":self.ws.settings()},headers={"Set-Cookie":self.session_cookie(new_token)})
+            return self.send(200,{"user":new_user,"projects":self.ws.projects(new_user["id"]),"settings":self.ws.settings(new_user["id"])},headers={"Set-Cookie":self.session_cookie(new_token)})
         if not user:raise APIError(401,"登录已过期，请重新进入工作空间")
         owner=user["id"]
+        if parts==["api","model-connection"]:
+            if method=="GET":return self.send(200,{"settings":self.ws.settings(owner)})
+            if method=="PUT":return self.send(200,{"settings":self.ws.set_user_model(owner,self.body())})
+            if method=="DELETE":self.body();return self.send(200,{"settings":self.ws.clear_user_model(owner)})
         if parts==["api","projects"]:
             if method=="GET":return self.send(200,{"projects":self.ws.projects(owner)})
             if method=="POST":return self.send(201,{"project":self.ws.create_project(owner,self.body())})

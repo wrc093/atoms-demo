@@ -12,6 +12,7 @@ import urllib.request
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 
 from backend.compiler import BuildError, compile_preview, validate
 from backend.core import Workspace, now
@@ -192,6 +193,65 @@ class BackendTest(unittest.TestCase):
         self.assertIn("connect-src 'none'",unescape(html));self.assertIn("form-action 'none'",unescape(html))
         self.assertNotIn('</script><script>unsafe',html)
         with self.assertRaises(BuildError):validate([{'path':'index.html','text':'<main>test<script src="https://evil.invalid/x.js"></script></main>'}])
+
+
+    def connect_user_model(self, **overrides):
+        payload={'baseUrl':'https://models.example.test/v1','model':'user-model','api':'chat_completions','apiKey':'user-test-key-only',**overrides}
+        with patch('backend.providers.public_addresses',return_value=['8.8.8.8']):
+            return self.client.call('/api/model-connection','PUT',payload)
+
+    def test_user_connection_is_isolated_and_never_returned(self):
+        status,result,_=self.connect_user_model()
+        self.assertEqual(status,200);self.assertTrue(result['settings']['userModel']['ready'])
+        self.assertNotIn('user-test-key-only',json.dumps(result))
+        self.assertNotIn('key',result['settings']['userModel'])
+        other=Client(self.base);other.call('/api/bootstrap','POST',{})
+        self.assertFalse(other.call('/api/model-connection')[1]['settings']['userModel']['ready'])
+        self.assertEqual(other.call('/api/model-connection','PUT',{},headers={'Origin':'https://evil.invalid'})[0],403)
+        self.assertEqual(Client(self.base).call('/api/model-connection')[0],401)
+        self.assertEqual(other.call(self.root+'/generate','POST',{'mode':'byok','operation':'build','prompt':'test'})[0],503)
+        self.assertNotIn('user-test-key-only',json.dumps(self.client.call('/api/bootstrap','POST',{})[1]))
+
+    def test_user_connection_removal_logout_and_restart(self):
+        self.connect_user_model()
+        rebuilt=Workspace(self.path)
+        self.assertFalse(rebuilt.settings(self.bootstrap['user']['id'])['userModel']['ready'])
+        self.assertTrue(self.client.call('/api/model-connection')[1]['settings']['userModel']['ready'])
+        self.assertEqual(self.client.call('/api/model-connection','DELETE',{})[0],200)
+        self.assertFalse(self.client.call('/api/model-connection')[1]['settings']['userModel']['ready'])
+        self.connect_user_model();owner=self.bootstrap['user']['id']
+        self.client.call('/api/auth/logout','POST',{})
+        self.assertFalse(self.ws.settings(owner)['userModel']['ready'])
+
+    def test_user_connection_update_requires_key_for_new_destination(self):
+        self.connect_user_model()
+        self.assertEqual(self.connect_user_model(apiKey='',model='updated-model')[0],200)
+        self.assertEqual(self.connect_user_model(apiKey='',baseUrl='https://another.example.test/v1')[0],400)
+        self.assertEqual(self.connect_user_model(apiKey='bad\r\nheader')[0],400)
+        self.assertEqual(self.connect_user_model(baseUrl='http://example.test/v1')[0],400)
+        self.assertEqual(self.connect_user_model(baseUrl='https://user:password@example.test/v1')[0],400)
+
+    def test_user_key_build_uses_own_config_without_category_limits(self):
+        self.connect_user_model()
+        self.ws.config={'key':'platform-test-key-only','model':'platform-model'}
+        attempts=[];files=starter({'appName':'自由应用'})
+        def transport(url,body,key):
+            attempts.append((url,body,key))
+            return json.dumps({'choices':[{'finish_reason':'stop','message':{'content':json.dumps({'summary':'使用用户模型生成','files':files})}}]}).encode()
+        with patch('backend.core.request_user_model',side_effect=transport):
+            status,result,_=self.client.call(self.root+'/generate','POST',{'mode':'byok','operation':'build','prompt':'一个自由的交互作品'})
+            self.assertEqual(status,202)
+            job=self.wait_job(result['job']['id']);self.assertEqual(job['status'],'completed',job)
+        self.assertEqual(attempts[0][0],'https://models.example.test/v1/chat/completions')
+        self.assertEqual(attempts[0][1]['model'],'user-model');self.assertEqual(attempts[0][2],'user-test-key-only')
+        context=json.loads(attempts[0][1]['messages'][1]['content'])
+        self.assertEqual(set(context['plan']),{'appName','goal'});self.assertEqual(context['current_files'],[])
+        result=self.client.call(self.root)[1]
+        self.assertEqual(result['project']['currentVersion'],2);self.assertEqual(result['project']['plan']['mode'],'byok')
+        self.assertNotIn('user-test-key-only',json.dumps(result))
+        with self.ws.db() as connection:
+            requests=connection.execute('SELECT request FROM jobs').fetchall()
+            self.assertTrue(all('user-test-key-only' not in row['request'] for row in requests))
 
 
 if __name__=='__main__':unittest.main()
