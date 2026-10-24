@@ -5,13 +5,37 @@ import re
 import shutil
 import subprocess
 import tempfile
+import sys
 from html import escape
 from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 
 
 class BuildError(ValueError):
-    pass
+    def __init__(self, message, diagnostic=None):
+        super().__init__(message)
+        self.diagnostics = [diagnostic] if diagnostic else []
+
+
+def check_html(sources):
+    html = [{"path": path, "text": text} for path, text in sources.items() if path.lower().endswith((".html", ".htm"))]
+    try:
+        result = subprocess.run([sys.executable, "-I", str(Path(__file__).with_name("html_check.py"))],
+                                input=json.dumps(html), capture_output=True, text=True, timeout=6)
+        if result.returncode:
+            raise BuildError("HTML 校验服务暂不可用，预览未更新，请稍后重试")
+        issue = json.loads(result.stdout)
+        if issue:
+            if (issue.get("path") not in sources or type(issue.get("line")) is not int
+                    or type(issue.get("column")) is not int or not isinstance(issue.get("message"), str)):
+                raise ValueError("invalid diagnostic")
+            raise BuildError(f'{issue["path"]}:{issue["line"]}:{issue["column"]}：{issue["message"]}', issue)
+    except subprocess.TimeoutExpired:
+        raise BuildError("HTML 校验超时，预览未更新，请简化代码后重试") from None
+    except (OSError, ValueError) as error:
+        if isinstance(error, BuildError):
+            raise
+        raise BuildError("HTML 校验服务暂不可用，预览未更新，请稍后重试") from None
 
 
 def safe_path(value):
@@ -97,6 +121,7 @@ def validate(files):
         raise BuildError("缺少有效的 index.html 入口")
     if sum(len(text.encode()) for text in sources.values()) > 2_000_000:
         raise BuildError("源码总大小超过 2 MB")
+    check_html(sources)
     parser = Bundler(sources)
     parser.feed(sources["index.html"])
     parser.close()

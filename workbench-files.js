@@ -1,4 +1,4 @@
-/* Local project explorer. Imported bytes stay in this browser's IndexedDB. */
+/* Project explorer and editable drafts; saved files live in the server workspace. */
 (async () => {
   const product = document.querySelector('.fm-product');
   const zone = document.querySelector('.fm-canvas-zone');
@@ -11,6 +11,7 @@
   const icons = () => window.lucide?.createIcons();
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   const animate = (element, frames, options = {}) => { if (element && !reduced.matches) element.animate(frames, { duration: 350, easing: 'cubic-bezier(.16,1,.3,1)', ...options }); };
+  let sourceRevision=null, saving=false, buildIssue=null;
   let toastTimer, editor, currentLine, switching = false, requestVersion = 0, previousFocus;
   const files = new Map(), docs = new Map(), dirty = new Set(), objectURLs = new Map();
   const openFolders = new Set(['src','src/components','src/styles']);
@@ -33,14 +34,14 @@
 
   const fromServer = file => {const bytes=Uint8Array.from(atob(file.base64),c=>c.charCodeAt(0));return {...file,blob:new Blob([bytes],{type:file.mime})};};
   async function put(file) {
-    const body={path:file.path,mime:file.mime,kind:file.kind||'asset',revision:file.revision};
+    const body={path:file.path,mime:file.mime,kind:file.kind||'asset',revision:file.revision,...(file.kind==='source'?{sourceRevision}:{})};
     if(file.text!==undefined)body.text=file.text;
     else {const bytes=new Uint8Array(await file.blob.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));body.base64=btoa(binary);}
-    const result=await FormaAPI.request('/projects/'+encodeURIComponent(project)+'/files','PUT',body);const saved=fromServer(result.file);files.set(saved.path,saved);revoke(saved.path);return saved;
+    const result=await FormaAPI.request('/projects/'+encodeURIComponent(project)+'/files','PUT',body);const saved=fromServer(result.file);if(file.kind==='source')sourceRevision=saved.sourceRevision;files.set(saved.path,saved);revoke(saved.path);return saved;
   }
   async function initialize() {
     await FormaAPI.ready;const result=await FormaAPI.request('/projects/'+encodeURIComponent(project)+'/files');
-    result.files.forEach(file=>files.set(file.path,fromServer(file)));
+    sourceRevision=result.sourceRevision;result.files.forEach(file=>files.set(file.path,fromServer(file)));
     try {const saved=JSON.parse(localStorage.getItem('forma-editor-tabs-'+project));if(saved?.tabs?.length){state.tabs=saved.tabs.filter(path=>files.has(path));state.active=state.tabs.includes(saved.active)?saved.active:state.tabs[0];}}catch{}
     state.tabs=state.tabs.filter(path=>files.has(path));if(!files.has(state.active))state.active=state.tabs[0]||[...files.keys()][0]||'';
   }
@@ -51,9 +52,24 @@
   const preview=zone.querySelector('.fm-canvas');preview.id='fs-preview-panel';preview.setAttribute('role','tabpanel');preview.setAttribute('aria-labelledby','fs-preview-tab');
   preview.querySelector('.fm-files')?.remove();
   const surface=document.createElement('div');surface.className='fs-surface';surface.hidden=true;
-  surface.innerHTML=`<section class="fs-editor" id="fs-editor-panel" role="tabpanel" aria-labelledby="fs-editor-tab" hidden><aside class="fs-explorer"><div class="fs-explorer-title"><span>${icon('folder-open')}项目资源</span><button class="fs-shell-button" data-fs="tree-collapse" aria-label="折叠文件夹">${icon('fold-vertical')}</button></div><label class="fs-search">${icon('search')}<input class="fs-tree-search" aria-label="搜索项目文件" placeholder="查找文件…"></label><div class="fs-tree" role="tree" aria-label="项目文件树"></div><div class="fs-explorer-foot">${icon('hard-drive')}<span class="fs-file-total">项目文件</span></div></aside><div class="fs-editor-main"><div class="fs-tabs" role="tablist" aria-label="打开的文件"></div><div class="fs-editor-toolbar"><div class="fs-file-breadcrumb"></div><div class="fs-editor-actions"><button class="fs-tool" data-fs="tree-toggle" aria-label="切换文件树">${icon('panel-left')}</button><button class="fs-tool" data-fs="find" aria-label="搜索当前文件">${icon('search')}</button><button class="fs-tool" data-fs="wrap" aria-label="自动换行" aria-pressed="true">${icon('wrap-text')}</button><button class="fs-tool" data-fs="download-active" aria-label="下载当前文件">${icon('download')}</button><button class="fs-tool fs-save" data-fs="save">${icon('check')}<span>保存</span><kbd>⌘S</kbd></button></div></div><div class="fs-findbar" hidden><label class="fs-search">${icon('search')}<input class="fs-find-input" aria-label="搜索代码" placeholder="在当前文件中查找"></label><span class="fs-find-count">输入关键词</span><button class="fs-tool" data-fs="find-previous" aria-label="上一个匹配">${icon('chevron-up')}</button><button class="fs-tool" data-fs="find-next" aria-label="下一个匹配">${icon('chevron-down')}</button><button class="fs-tool" data-fs="find-close" aria-label="关闭代码搜索">${icon('x')}</button></div><div class="fs-code-host" id="fs-code-panel" role="tabpanel"><div class="fs-loading">正在打开项目文件…</div></div><div class="fs-statusbar"><span>${icon('hard-drive')}服务端源码 · 保存后更新预览</span><span class="fs-status-right"><span class="fs-save-status">已保存</span><span>UTF-8</span><span class="fs-cursor">行 1，列 1</span><span class="fs-language">TypeScript JSX</span></span></div></div></section><section class="fs-manager" id="fs-files-panel" role="tabpanel" aria-labelledby="fs-files-tab" hidden><div class="fs-manager-head"><div class="fs-manager-crumbs"></div><div class="fs-manager-actions"><button class="fs-button" data-fs="upload-folder">${icon('folder-up')}上传文件夹</button><button class="fs-button fs-upload" data-fs="upload">${icon('upload')}上传文件</button></div></div><div class="fs-manager-tools"><label class="fs-search">${icon('search')}<input class="fs-file-search" aria-label="搜索当前文件夹" placeholder="查找名称…"></label><div class="fs-layout-toggle" role="group" aria-label="文件展示方式"><button data-fs-layout="list" aria-label="列表视图" aria-pressed="true">${icon('list')}</button><button data-fs-layout="grid" aria-label="缩略图视图" aria-pressed="false">${icon('layout-grid')}</button></div></div><div class="fs-manager-scroll"></div><div class="fs-upload-status" hidden><span class="fs-upload-message"></span><div class="fs-upload-track"><span></span></div></div><div class="fs-manager-foot"><span class="fs-manager-count">正在读取文件…</span><span>${icon('hard-drive')}文件上传至当前项目服务器</span></div><div class="fs-drop-shade" hidden>${icon('upload')}放开，添加到当前文件夹<small>支持图片、文档与代码文件</small></div><input type="file" class="fs-upload-input" multiple hidden><input type="file" class="fs-folder-input" webkitdirectory multiple hidden></section><div class="fs-viewer-backdrop" hidden></div>`;
+  surface.innerHTML=`<section class="fs-editor" id="fs-editor-panel" role="tabpanel" aria-labelledby="fs-editor-tab" hidden><aside class="fs-explorer"><div class="fs-explorer-title"><span>${icon('folder-open')}项目资源</span><button class="fs-shell-button" data-fs="tree-collapse" aria-label="折叠文件夹">${icon('fold-vertical')}</button></div><label class="fs-search">${icon('search')}<input class="fs-tree-search" aria-label="搜索项目文件" placeholder="查找文件…"></label><div class="fs-tree" role="tree" aria-label="项目文件树"></div><div class="fs-explorer-foot">${icon('hard-drive')}<span class="fs-file-total">项目文件</span></div></aside><div class="fs-editor-main"><div class="fs-tabs" role="tablist" aria-label="打开的文件"></div><div class="fs-editor-toolbar"><div class="fs-file-breadcrumb"></div><div class="fs-editor-actions"><button class="fs-tool" data-fs="tree-toggle" aria-label="切换文件树">${icon('panel-left')}</button><button class="fs-tool" data-fs="find" aria-label="搜索当前文件">${icon('search')}</button><button class="fs-tool" data-fs="wrap" aria-label="自动换行" aria-pressed="true">${icon('wrap-text')}</button><button class="fs-tool" data-fs="download-active" aria-label="下载当前文件">${icon('download')}</button><button class="fs-tool fs-save" data-fs="save">${icon('check')}<span>保存</span><kbd>⌘S</kbd></button></div></div><div class="fs-findbar" hidden><label class="fs-search">${icon('search')}<input class="fs-find-input" aria-label="搜索代码" placeholder="在当前文件中查找"></label><span class="fs-find-count">输入关键词</span><button class="fs-tool" data-fs="find-previous" aria-label="上一个匹配">${icon('chevron-up')}</button><button class="fs-tool" data-fs="find-next" aria-label="下一个匹配">${icon('chevron-down')}</button><button class="fs-tool" data-fs="find-close" aria-label="关闭代码搜索">${icon('x')}</button></div><div class="fs-code-host" id="fs-code-panel" role="tabpanel"><div class="fs-loading">正在打开项目文件…</div></div><div class="fs-statusbar"><span>${icon('hard-drive')}服务端草稿 · 检查通过后更新预览</span><span class="fs-status-right"><span class="fs-save-status">已保存</span><span>UTF-8</span><span class="fs-cursor">行 1，列 1</span><span class="fs-language">TypeScript JSX</span></span></div></div></section><section class="fs-manager" id="fs-files-panel" role="tabpanel" aria-labelledby="fs-files-tab" hidden><div class="fs-manager-head"><div class="fs-manager-crumbs"></div><div class="fs-manager-actions"><button class="fs-button" data-fs="upload-folder">${icon('folder-up')}上传文件夹</button><button class="fs-button fs-upload" data-fs="upload">${icon('upload')}上传文件</button></div></div><div class="fs-manager-tools"><label class="fs-search">${icon('search')}<input class="fs-file-search" aria-label="搜索当前文件夹" placeholder="查找名称…"></label><div class="fs-layout-toggle" role="group" aria-label="文件展示方式"><button data-fs-layout="list" aria-label="列表视图" aria-pressed="true">${icon('list')}</button><button data-fs-layout="grid" aria-label="缩略图视图" aria-pressed="false">${icon('layout-grid')}</button></div></div><div class="fs-manager-scroll"></div><div class="fs-upload-status" hidden><span class="fs-upload-message"></span><div class="fs-upload-track"><span></span></div></div><div class="fs-manager-foot"><span class="fs-manager-count">正在读取文件…</span><span>${icon('hard-drive')}文件上传至当前项目服务器</span></div><div class="fs-drop-shade" hidden>${icon('upload')}放开，添加到当前文件夹<small>支持图片、文档与代码文件</small></div><input type="file" class="fs-upload-input" multiple hidden><input type="file" class="fs-folder-input" webkitdirectory multiple hidden></section><div class="fs-viewer-backdrop" hidden></div>`;
   zone.insertBefore(surface,zone.querySelector('.fm-canvas-footer'));icons();
   const tree=surface.querySelector('.fs-tree'),tabs=surface.querySelector('.fs-tabs'),codeHost=surface.querySelector('.fs-code-host'),manager=surface.querySelector('.fs-manager'),viewer=surface.querySelector('.fs-viewer-backdrop');
+
+  const buildNotice=document.createElement('div');buildNotice.className='fs-build-notice';buildNotice.hidden=true;buildNotice.setAttribute('role','status');
+  codeHost.before(buildNotice);
+  function clearBuildIssue(){buildIssue=null;buildNotice.hidden=true;}
+  function showBuildIssue(error){
+    buildIssue=error.diagnostics?.[0]||null;
+    buildNotice.innerHTML=`<div><strong>预览未更新 · 继续显示上一成功版本</strong><p>${escape(error.message)}</p></div>${buildIssue?'<button type="button" data-fs="locate-error">定位错误</button>':''}`;
+    buildNotice.hidden=false;editor?.refresh();
+  }
+  async function locateError(){
+    if(!buildIssue||!files.has(buildIssue.path))return;
+    const issue=buildIssue;await open(issue.path);if(!editor)return;
+    const position={line:Math.max(0,issue.line-1),ch:Math.max(0,issue.column-1)};
+    editor.setCursor(position);editor.scrollIntoView(position,80);editor.focus();
+  }
 
   function view(value,notify=true) {
     state.view=['preview','editor','files'].includes(value)?value:'preview';
@@ -95,7 +111,7 @@
     codeHost.innerHTML='';
     if(!window.CodeMirror){codeHost.innerHTML='<div class="fs-empty-editor">编辑器暂时未加载，请刷新页面。</div>';return;}
     editor=CodeMirror(codeHost,{value:'',mode:'text/plain',theme:'forma',lineNumbers:true,lineWrapping:true,tabSize:2,indentUnit:2,viewportMargin:15,extraKeys:{'Cmd-S':()=>save(),'Ctrl-S':()=>save(),'Cmd-F':()=>findBar(),'Ctrl-F':()=>findBar(),Tab:cm=>cm.replaceSelection('  ')}});
-    editor.on('changes',()=>{if(switching||!state.active)return;dirty.add(state.active);renderTabs();status();});
+    editor.on('changes',()=>{if(switching||!state.active)return;dirty.add(state.active);clearBuildIssue();renderTabs();status();});
     editor.on('cursorActivity',()=>{status();if(currentLine!=null)editor.removeLineClass(currentLine,'background','CodeMirror-activeline-background');currentLine=editor.getCursor().line;editor.addLineClass(currentLine,'background','CodeMirror-activeline-background');});
   }
   async function open(path,forceView=true) {
@@ -113,9 +129,25 @@
     }
   }
   async function save() {
-    const path=state.active;if(!path||!dirty.has(path)){toast('当前文件已保存到服务器');return;}
-    const file=files.get(path),doc=docs.get(path);if(!file||!doc)return;
-    try {const text=doc.getValue();const blob=new Blob([text],{type:file.mime});await put({...file,text,blob,size:blob.size,updated:Date.now()});if(doc.getValue()===text){dirty.delete(path);doc.markClean();}renderTabs();renderTree();status();if(file.kind==='source'){try{await window.FormaWorkspace.build();}catch(error){toast('草稿已保存，预览构建未通过：'+error.message);}}else toast('文件已保存到服务器。');}catch{toast('保存未完成，当前草稿仍保留在编辑器中。');}
+    if(saving)return;
+    const path=state.active,file=files.get(path),doc=docs.get(path);if(!file||!doc)return;
+    if(!dirty.has(path)){
+      if(file.kind==='source'&&!dirty.size){try{await window.FormaWorkspace.build({sourceRevision});}catch(error){showBuildIssue(error);toast(error.message);}}
+      else toast('当前文件已保存到服务器');return;
+    }
+    saving=true;surface.querySelector('.fs-save').disabled=true;
+    try {
+      const text=doc.getValue(),blob=new Blob([text],{type:file.mime});
+      await put({...file,text,blob,size:blob.size,updated:Date.now()});
+      if(doc.getValue()===text){dirty.delete(path);doc.markClean();}
+      renderTabs();renderTree();status();
+      if(file.kind==='source'){
+        if(dirty.size){toast('本次草稿已保存；还有未保存的修改，预览尚未更新。');return;}
+        try{await window.FormaWorkspace.build({sourceRevision});clearBuildIssue();}
+        catch(error){showBuildIssue(error);toast('草稿已保存，预览未更新：'+error.message);}
+      }else toast('文件已保存到服务器。');
+    }catch(error){toast('保存未完成，草稿仍保留：'+error.message);}
+    finally{saving=false;surface.querySelector('.fs-save').disabled=false;}
   }
   function closeTab(path) {state.tabs=state.tabs.filter(item=>item!==path);if(state.active===path){state.active=state.tabs.at(-1)||'';if(state.active)open(state.active,false);else{if(editor)editor.getWrapperElement().hidden=true;surface.querySelector('.fs-binary-editor')?.remove();const area=document.createElement('div');area.className='fs-binary-editor';area.innerHTML='<div class="fs-empty-editor">'+icon('files')+'选择一个文件，继续构建。<small>从左侧文件树打开项目文件</small></div>';codeHost.append(area);status();}}renderTabs();rememberTabs();if(dirty.has(path))toast('未保存的草稿暂时保留在当前页面，重新打开文件可继续编辑。');}
   function download(path) {const file=files.get(path);if(!file)return;const blob=dirty.has(path)&&docs.has(path)?new Blob([docs.get(path).getValue()],{type:file.mime}):file.blob;const link=document.createElement('a');const address=URL.createObjectURL(blob);link.href=address;link.download=basename(path);document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(address),1000);}
@@ -182,6 +214,7 @@
       case 'tree-toggle':surface.querySelector('.fs-editor').classList.toggle('fs-tree-collapsed');editor?.refresh();break;
       case 'tree-collapse':openFolders.clear();renderTree();break;
       case 'save':save();break;
+      case 'locate-error':locateError();break;
       case 'wrap':state.wrap=!state.wrap;target.setAttribute('aria-pressed',String(state.wrap));editor?.setOption('lineWrapping',state.wrap);break;
       case 'download-active':download(state.active);break;
       case 'find':findBar();break;
@@ -209,8 +242,8 @@
   },true);
   window.addEventListener('pagehide',()=>{objectURLs.forEach(address=>URL.revokeObjectURL(address));});
   let initialized=false;
-  window.FormaFiles={dirty:()=>dirty.size};
+  window.FormaFiles={dirty:()=>dirty.size,revision:()=>sourceRevision,showBuildIssue,clearBuildIssue};
   let resizeFrame;window.addEventListener('forma-layout-resize',()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>editor?.refresh());});
-  window.addEventListener('forma-source-changed',async()=>{if(!initialized)return;if(dirty.size){toast('服务器源码已更新，当前未保存草稿已保留，请刷新并合并。');return;}try{files.clear();docs.clear();await initialize();renderTree();renderTabs();renderManager();if(state.active)await open(state.active,false);}catch(error){toast(error.message);}});
+  window.addEventListener('forma-source-changed',async()=>{if(!initialized)return;if(dirty.size){toast('服务器源码已更新，当前未保存草稿已保留，请刷新并合并。');return;}try{const result=await FormaAPI.request('/projects/'+encodeURIComponent(project)+'/files');if(dirty.size||saving){toast('服务器源码已更新，当前草稿已保留，请刷新后合并。');return;}requestVersion++;files.forEach(file=>revoke(file.path));files.clear();docs.clear();sourceRevision=result.sourceRevision;result.files.forEach(file=>files.set(file.path,fromServer(file)));state.tabs=state.tabs.filter(path=>files.has(path));if(!files.has(state.active))state.active=state.tabs[0]||[...files.keys()][0]||'';clearBuildIssue();renderTree();renderTabs();renderManager();if(state.active)await open(state.active,false);}catch(error){toast(error.message);} });
   try {await initialize();initialized=true;makeEditor();renderTree();if(state.active&&files.has(state.active))await open(state.active,false);renderManager();view(new URLSearchParams(location.search).get('view')||'preview',false);}catch(error){toast('项目文件未能加载，请刷新后重试。');console.error(error);}
 })();

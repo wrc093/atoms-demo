@@ -66,7 +66,7 @@
     if(!detail?.project.currentVersion)return;
     const result=await FormaAPI.request(api('/preview'));previewToken=result.token;loadedVersion=result.version;frame.srcdoc=result.html;
   }
-  async function load(refreshFiles=false,scroll=false){
+  async function load(refreshFiles=false,scroll=false,preserveSource=false){
     clearTimeout(pollTimer);
     detail=await FormaAPI.request(api(''));
     window.FormaWorkspace.detail=detail;
@@ -75,7 +75,7 @@
     renderThread(scroll);
     const changed=detail.project.currentVersion!==loadedVersion;const wasLoaded=loadedVersion>0;
     if(changed)await preview();
-    if(refreshFiles||(changed&&wasLoaded))window.dispatchEvent(new Event('forma-source-changed'));
+    if(!preserveSource&&(refreshFiles||(changed&&wasLoaded)))window.dispatchEvent(new Event('forma-source-changed'));
     if(active())pollTimer=setTimeout(()=>load(false,true).catch(error=>toast(error.message)),1000);
   }
   function hasDrafts(){if(window.FormaFiles?.dirty()){toast('编辑器还有未保存的草稿，请先保存，再生成或恢复版本。');return true;}return false;}
@@ -84,18 +84,29 @@
     if((options.mode||mode.value)==='byok'&&!FormaAPI.settings?.userModel?.ready){if(!await FormaModel.open())return;}
     try{await FormaAPI.request(api('/generate'),'POST',{prompt,mode:options.mode||mode.value,operation:options.operation||'modify'});await load(false,true);product.querySelector('.fm-composer textarea').value='';}catch(error){toast(error.message);}
   }
-  async function build(){
+  let building=false;
+  async function build(options={}){
+    if(building)throw new Error('正在检查代码，请稍候。');
     if(active())throw new Error('项目正在构建，请等待完成。');
-    await load();if(active())throw new Error('项目正在构建，请等待完成。');
-    if(!detail.project.dirty&&detail.project.currentVersion)return;
-    await FormaAPI.request(api('/build'),'POST',{});await load(true,true);toast('代码校验通过，运行预览已更新。');
+    if(window.FormaFiles?.dirty())throw new Error('编辑器还有未保存的修改，请先保存所有修改。');
+    const sourceRevision=options.sourceRevision??window.FormaFiles?.revision();
+    building=true;
+    try{
+      await load(false,false,true);if(active())throw new Error('项目正在构建，请等待完成。');
+      if(sourceRevision!=null&&sourceRevision!==detail.project.sourceRevision)throw new Error('服务器源码已更新，请刷新并合并后再更新预览。');
+      if(!detail.project.dirty&&detail.project.currentVersion){window.FormaFiles?.clearBuildIssue();toast('草稿已保存，当前预览为 V'+detail.project.currentVersion+'。');return;}
+      const result=await FormaAPI.request(api('/build'),'POST',{sourceRevision});
+      await load(false,true,true);window.FormaFiles?.clearBuildIssue();
+      toast('静态检查通过，已更新本机预览 V'+result.version+'。'+(window.FormaFiles?.dirty()?'还有新修改未保存。':''));
+    }catch(error){window.FormaFiles?.showBuildIssue(error);throw error;}
+    finally{building=false;}
   }
   const time=value=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value));
   async function history(number=detail.project.currentVersion){
     selectedVersion=Number(number);const request=++reviewRequest;
     const {version}=await FormaAPI.request(api('/versions?number='+selectedVersion));if(request!==reviewRequest)return;
     const current=version.number===detail.project.currentVersion;
-    modal(`<header class="fm-review-head"><div class="fm-modal-eyebrow">SOURCE HISTORY / SERVER SNAPSHOTS</div><h2 id="fm-dialog-title">每次构建，都有迹可循。</h2><p>这里保存的是可以运行的完整源码。</p></header><div class="fm-review-body"><nav class="fm-version-list" aria-label="源码版本"><span class="fm-version-list-label">${detail.versions.length} 个源码版本</span>${detail.versions.map(v=>`<button class="fm-version-item ${v.number===version.number?'selected':''}" data-review="${v.number}" aria-pressed="${v.number===version.number}"><span class="fm-version-node"></span><span><b>V${v.number}${v.number===detail.project.currentVersion?'<em>当前</em>':''}</b><strong>${esc(v.summary)}</strong><small>${time(v.created)} · ${esc(v.provider)}</small></span></button>`).join('')}</nav><section class="fm-version-detail"><div class="fm-version-detail-heading"><span>V${version.number} / 完整源码快照</span><span>${time(version.created)}</span></div><iframe class="fm-version-live" title="版本 ${version.number} 的界面快照" sandbox="allow-scripts" tabindex="-1"></iframe><div class="fm-diff-heading">${version.changes.length} 个文件变化 · 展开查看前后源码</div><div class="fm-server-diffs">${version.changes.map(change=>`<details><summary>${icon('file-code-2')}${esc(change.path)}<small>${({added:'新增',removed:'移除',modified:'修改'})[change.kind]}</small></summary><div class="fm-source-compare"><div><span>之前</span><pre>${esc(change.before.split('\n').slice(0,80).join('\n')||'（不存在）')}</pre></div><div><span>之后</span><pre>${esc(change.after.split('\n').slice(0,80).join('\n')||'（已移除）')}</pre></div></div><small>每侧展示前 80 行；完整文件保存在版本快照中。</small></details>`).join('')}</div><div class="fm-version-restore"><p>${current?'此版本正在工作台运行。':'恢复会创建新的源码版本，保留现有历史。'}</p><button class="fm-primary" data-restore-version="${version.number}" ${current?'disabled':''}>${icon(current?'check':'rotate-ccw')}${current?'当前版本':'恢复此源码版本'}</button></div></section></div><footer class="fm-review-foot">${icon('database')}源码快照保存在服务端；应用数据和上传素材不随版本恢复覆盖。</footer>`,true);
+    modal(`<header class="fm-review-head"><div class="fm-modal-eyebrow">SOURCE HISTORY / SERVER SNAPSHOTS</div><h2 id="fm-dialog-title">每次构建，都有迹可循。</h2><p>这里保存的是每次预览使用的完整源码快照。</p></header><div class="fm-review-body"><nav class="fm-version-list" aria-label="源码版本"><span class="fm-version-list-label">${detail.versions.length} 个源码版本</span>${detail.versions.map(v=>`<button class="fm-version-item ${v.number===version.number?'selected':''}" data-review="${v.number}" aria-pressed="${v.number===version.number}"><span class="fm-version-node"></span><span><b>V${v.number}${v.number===detail.project.currentVersion?'<em>当前</em>':''}</b><strong>${esc(v.summary)}</strong><small>${time(v.created)} · ${esc(v.provider)}</small></span></button>`).join('')}</nav><section class="fm-version-detail"><div class="fm-version-detail-heading"><span>V${version.number} / 完整源码快照</span><span>${time(version.created)}</span></div><iframe class="fm-version-live" title="版本 ${version.number} 的界面快照" sandbox="allow-scripts" tabindex="-1"></iframe><div class="fm-diff-heading">${version.changes.length} 个文件变化 · 展开查看前后源码</div><div class="fm-server-diffs">${version.changes.map(change=>`<details><summary>${icon('file-code-2')}${esc(change.path)}<small>${({added:'新增',removed:'移除',modified:'修改'})[change.kind]}</small></summary><div class="fm-source-compare"><div><span>之前</span><pre>${esc(change.before.split('\n').slice(0,80).join('\n')||'（不存在）')}</pre></div><div><span>之后</span><pre>${esc(change.after.split('\n').slice(0,80).join('\n')||'（已移除）')}</pre></div></div><small>每侧展示前 80 行；完整文件保存在版本快照中。</small></details>`).join('')}</div><div class="fm-version-restore"><p>${current?'此版本正在工作台运行。':'恢复会创建新的源码版本，保留现有历史。'}</p><button class="fm-primary" data-restore-version="${version.number}" ${current?'disabled':''}>${icon(current?'check':'rotate-ccw')}${current?'当前版本':'恢复此源码版本'}</button></div></section></div><footer class="fm-review-foot">${icon('database')}源码快照保存在服务端；应用数据和上传素材不随版本恢复覆盖。</footer>`,true);
     overlay.querySelector('.fm-version-item.selected')?.focus();
     const result=await FormaAPI.request(api('/preview?version='+version.number));
     if(!overlay.hidden&&selectedVersion===version.number)overlay.querySelector('.fm-version-live').srcdoc=result.html;

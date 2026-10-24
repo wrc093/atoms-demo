@@ -356,10 +356,12 @@ class Workspace:
             if job and job['status'] in ('failed','cancelled'):p.update(stage='interrupted',date='生成未完成 · 可恢复')
             return {"project":p,"versions":versions,"messages":messages,"job":self.job_dict(c,job) if job else None}
 
-    def list_files(self, owner, project_id):
+    def list_files(self, owner, project_id, with_revision=False):
         with self.db() as c:
-            self.owned(c,owner,project_id)
-            return [file_json(row) for row in c.execute("SELECT * FROM files WHERE project=? ORDER BY path", (project_id,))]
+            c.execute("BEGIN")
+            project=self.owned(c,owner,project_id)
+            files=[file_json(row) for row in c.execute("SELECT * FROM files WHERE project=? ORDER BY path", (project_id,))]
+            return {"files":files,"sourceRevision":project["source_revision"]} if with_revision else files
 
     def put_file(self, owner, project_id, data):
         path = safe_path(data.get("path"))
@@ -376,7 +378,7 @@ class Workspace:
             raise APIError(413, "单个文件不能超过 5 MB")
         with self.db() as c:
             c.execute("BEGIN IMMEDIATE")
-            self.owned(c,owner,project_id);self.busy(c,project_id)
+            project=self.owned(c,owner,project_id);self.busy(c,project_id)
             old = c.execute("SELECT * FROM files WHERE project=? AND path=?", (project_id,path)).fetchone()
             if old and data.get("revision")!=old["revision"]:
                 raise APIError(409, "文件已在其他页面更新，请刷新后合并修改")
@@ -388,6 +390,9 @@ class Workspace:
             self.check_file_quota(c,project_id,int(not old),len(content)-(len(old['data']) if old else 0))
             kind = old["kind"] if old else ("source" if data.get("kind")=="source" else "asset")
             if kind=="source":
+                expected=data.get("sourceRevision")
+                if expected is not None and (type(expected)!=int or expected!=project["source_revision"]):
+                    raise APIError(409,"项目源码已在其他页面更新，请刷新后合并修改")
                 if not old and c.execute("SELECT COUNT(*) FROM files WHERE project=? AND kind='source'",(project_id,)).fetchone()[0]>=40:raise APIError(413,'源码文件数量不能超过 40')
                 try: content.decode()
                 except UnicodeDecodeError: raise APIError(400, "源码必须使用 UTF-8 文本")
@@ -395,7 +400,9 @@ class Workspace:
             revision = old["revision"]+1 if old else 1
             c.execute("INSERT OR REPLACE INTO files VALUES(?,?,?,?,?,?,?)", (project_id,path,content,mime,kind,revision,now()))
             c.execute("UPDATE projects SET source_revision=source_revision+?,dirty=CASE WHEN ? THEN 1 ELSE dirty END,updated=? WHERE id=?", (int(kind=="source"),kind=="source",now(),project_id))
-            return file_json(c.execute("SELECT * FROM files WHERE project=? AND path=?", (project_id,path)).fetchone())
+            saved=file_json(c.execute("SELECT * FROM files WHERE project=? AND path=?", (project_id,path)).fetchone())
+            saved["sourceRevision"]=project["source_revision"]+int(kind=="source")
+            return saved
 
     def check_file_quota(self,c,project_id,added,byte_delta):
         count,size=c.execute('SELECT COUNT(*),COALESCE(SUM(length(data)),0) FROM files WHERE project=?',(project_id,)).fetchone()
@@ -404,17 +411,21 @@ class Workspace:
             raise APIError(413,'文件数量或存储已达上限，请联系管理员')
 
     @bounded_work('slots')
-    def build_saved(self, owner, project_id):
+    def build_saved(self, owner, project_id, expected_revision=None):
         with self.db() as c:
+            c.execute("BEGIN")
             row=self.owned(c,owner,project_id);self.busy(c,project_id)
-            revision=row["source_revision"];files=self.sources(c,project_id)
+            revision=row["source_revision"]
+            if expected_revision is not None and (type(expected_revision)!=int or expected_revision!=revision):
+                raise APIError(409,"项目源码已更新，请刷新并合并后再更新预览")
+            files=self.sources(c,project_id)
         validate(files)
         with self.db() as c:
             c.execute("BEGIN IMMEDIATE")
             row=self.owned(c,owner,project_id);self.busy(c,project_id)
             if row["source_revision"]!=revision:raise APIError(409,"文件在构建时发生变化，请重新构建")
             number=self.snapshot(c,project_id,"保存代码并更新预览","editor")
-            c.execute("INSERT INTO messages(project,role,text,version,created) VALUES(?,?,?,?,?)",(project_id,"assistant","代码校验通过，预览已更新。",number,now()))
+            c.execute("INSERT INTO messages(project,role,text,version,created) VALUES(?,?,?,?,?)",(project_id,"assistant",f"静态检查通过，已更新本机预览 V{number}。",number,now()))
         return number
 
     @bounded_work('slots')

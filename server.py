@@ -286,9 +286,11 @@ class Handler(BaseHTTPRequestHandler):
                 if method=='GET':return self.send(200,self.ws.project_skills(owner,project_id))
                 if method=='PUT':return self.send(200,self.ws.project_skills(owner,project_id,self.body()))
             if tail==["files"]:
-                if method=="GET":return self.send(200,{"files":self.ws.list_files(owner,project_id)})
+                if method=="GET":return self.send(200,self.ws.list_files(owner,project_id,with_revision=True))
                 if method=="PUT":return self.send(200,{"file":self.ws.put_file(owner,project_id,self.body())})
-            if tail==["build"] and method=="POST":self.body();return self.send(200,{"version":self.ws.build_saved(owner,project_id)})
+            if tail==["build"] and method=="POST":
+                data=self.body()
+                return self.send(200,{"version":self.ws.build_saved(owner,project_id,data.get("sourceRevision"))})
             if tail==["generate"] and method=="POST":return self.send(202,{"job":self.ws.enqueue(owner,project_id,self.body())})
             if tail==["restore"] and method=="POST":
                 number=self.body().get("version")
@@ -356,7 +358,7 @@ class Handler(BaseHTTPRequestHandler):
         try:self.dispatch()
         except (OSError,TimeoutError):pass
         except APIError as error:self.send(error.status,{"error":error.message,**error.details})
-        except BuildError as error:self.send(422,{"error":str(error)})
+        except BuildError as error:self.send(422,{"error":str(error),"diagnostics":error.diagnostics})
         except SkillError as error:self.send(error.status,{'error':str(error)})
         except Exception:
             print("Request failed (details withheld)",file=sys.stderr)
