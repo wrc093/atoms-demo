@@ -17,6 +17,7 @@
   product.querySelector('.fm-input-note').textContent='修改会生成新源码版本 · ⌘ / Ctrl + Enter 发送';
   const mode=document.createElement('select');mode.className='fm-generation-mode';mode.setAttribute('aria-label','生成方式');
   product.querySelector('.fm-composer>div>span').replaceWith(mode);
+  const modelPicker=FormaModelPicker.mount(mode,{compact:true});
   const planButton=document.createElement('button');planButton.dataset.action='plan';planButton.className='fm-quiet fm-plan-button';planButton.innerHTML=icon('notebook-pen')+'方案';
   const buildButton=document.createElement('button');buildButton.dataset.action='build';buildButton.className='fm-quiet';buildButton.innerHTML=icon('play')+'更新预览';
   product.querySelector('.fm-project-actions').prepend(planButton,buildButton);
@@ -57,7 +58,7 @@
     buildButton.disabled=!!active()||!detail.project.dirty;
     buildButton.title=detail.project.dirty?'校验并运行已保存的源码':'预览已是最新版本';
     product.querySelector('.fm-live').innerHTML=`<span></span>${active()?'构建中':job&&['failed','cancelled'].includes(job.status)?'可恢复生成':'已就绪'}`;
-    product.querySelector('.fm-composer [type=submit]').disabled=!!active();
+    product.querySelector('.fm-composer [type=submit]').disabled=!!active()||sending;mode.disabled=!!active()||sending;
     product.querySelector('.fm-canvas-footer>span:first-child').innerHTML=`<span class="fm-tiny-dot"></span>${detail.project.currentVersion?'运行 V'+detail.project.currentVersion:'等待首次构建'}${detail.project.dirty?' · 有未构建草稿':''}`;
     product.querySelector('.fm-canvas-footer>span:last-child').textContent=detail.project.dirty?'草稿已保存 · 等待更新预览':'所有更改已保存';
     icons();if(scroll)thread.scrollTo({top:thread.scrollHeight,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
@@ -79,10 +80,17 @@
     if(active())pollTimer=setTimeout(()=>load(false,true).catch(error=>toast(error.message)),1000);
   }
   function hasDrafts(){if(window.FormaFiles?.dirty()){toast('编辑器还有未保存的草稿，请先保存，再生成或恢复版本。');return true;}return false;}
+  let sending=false;
   async function generate(prompt,options={}){
-    if(!prompt.trim()||active()||hasDrafts())return;
-    if((options.mode||mode.value)==='byok'&&!FormaAPI.settings?.userModel?.ready){if(!await FormaModel.open())return;}
-    try{await FormaAPI.request(api('/generate'),'POST',{prompt,mode:options.mode||mode.value,operation:options.operation||'modify'});await load(false,true);product.querySelector('.fm-composer textarea').value='';}catch(error){toast(error.message);}
+    if(!prompt.trim()||active()||sending||hasDrafts())return;
+    sending=true;renderThread();
+    const textarea=product.querySelector('.fm-composer textarea'),draft=textarea.value;
+    try{
+      if((options.mode||mode.value)==='byok'&&!FormaAPI.settings?.userModel?.ready){if(!await FormaModel.open())return;}
+      await FormaAPI.request(api('/generate'),'POST',{prompt,mode:options.mode||mode.value,operation:options.operation||'modify'});
+      if(textarea.value===draft)textarea.value='';await load(false,true);
+    }catch(error){toast(error.message);}
+    finally{sending=false;renderThread();}
   }
   let building=false;
   async function build(options={}){
@@ -159,7 +167,7 @@
     catch(error){source.postMessage({type:'forma-runtime-result',token,id:message.id,error:error.message},'*');toast('应用数据未能保存：'+error.message);}
     finally{runtimePending--;if(task&&runtimeQueues.get(message.key)===task)runtimeQueues.delete(message.key);}
   });
-  window.addEventListener('forma-user-model-selected',()=>{mode.value='byok';});
+  window.addEventListener('forma-user-model-selected',()=>{mode.value='byok';modelPicker.sync();});
   window.addEventListener('forma-model-connection-change',()=>{mode.innerHTML=FormaModel.options(mode.value||'byok');});
   mode.addEventListener('change',()=>{if(mode.value==='byok'&&!FormaAPI.settings?.userModel?.ready)FormaModel.open();});
   window.addEventListener('pagehide',()=>clearTimeout(pollTimer));
