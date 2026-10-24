@@ -107,6 +107,8 @@ Key 不会出现在 API 响应、浏览器存储、日志或源码导出中。`.
 
 ## 验证
 
+安全加固、受控攻击结果、资源配额和上线防护见 [SECURITY.md](SECURITY.md)，HTTPS 反代模板见 [deploy/nginx.conf.example](deploy/nginx.conf.example)。应用代码不能独立防住带宽层 DDoS；公开部署仍需 CDN/WAF、源站防火墙与费用硬额度。
+
 ```bash
 python3 -m unittest discover -s tests -v
 ```

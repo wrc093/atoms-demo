@@ -1,0 +1,79 @@
+# Example standalone nginx.conf. Replace forma.example.com and certificate paths.
+# Validate with nginx -t before use. Keep Python bound to 127.0.0.1:8770.
+worker_processes auto;
+events { worker_connections 1024; }
+http {
+    include mime.types;
+    server_tokens off;
+    # Limit state is shared by nginx workers; Python limits are single-process.
+    limit_conn_zone $binary_remote_addr zone=connections:10m;
+    limit_req_zone $binary_remote_addr zone=api:10m rate=20r/s;
+    limit_req_zone $binary_remote_addr zone=auth:10m rate=5r/m;
+    limit_req_zone $binary_remote_addr zone=build:10m rate=6r/m;
+    limit_req_zone $server_name zone=total:1m rate=60r/s;
+    limit_req_status 429;
+    limit_conn_status 429;
+    client_max_body_size 7m;
+    client_header_timeout 10s;
+    client_body_timeout 10s;
+    send_timeout 15s;
+    keepalive_timeout 15s;
+    reset_timedout_connection on;
+
+    # URL queries can contain attacker/user data. Do not put them in access logs.
+    log_format forma '$remote_addr $request_method $uri $status $body_bytes_sent';
+    access_log /var/log/nginx/forma-access.log forma;
+
+    server { listen 80 default_server; server_name _; return 444; }
+    server {
+        listen 80;
+        server_name forma.example.com;
+        return 308 https://forma.example.com$request_uri;
+    }
+    server {
+        listen 443 ssl default_server;
+        server_name forma.example.com;
+        ssl_certificate /etc/letsencrypt/live/forma.example.com/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/forma.example.com/privkey.pem;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        if ($host != forma.example.com) { return 444; }
+        limit_conn connections 20;
+        limit_req zone=total burst=100 nodelay;
+
+        # Overwrite these: do not pass an incoming client's forwarding headers.
+        proxy_set_header Host forma.example.com;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For "";
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_http_version 1.0;
+        proxy_set_header Connection close;
+        proxy_connect_timeout 3s;
+        proxy_send_timeout 15s;
+        proxy_read_timeout 35s;
+        proxy_request_buffering on;
+        proxy_buffering on;
+
+        # Percent-encoded/noncanonical API paths are unnecessary for this app.
+        # Block them so nginx and Python cannot disagree about rate-limit routes.
+        if ($request_uri ~ "^[^?]*%") { return 400; }
+        merge_slashes on;
+        location ~ ^/api/auth/(?:login|register)/?$ {
+            client_max_body_size 16k;
+            limit_req zone=total burst=100 nodelay;
+            limit_req zone=auth burst=10 nodelay;
+            proxy_pass http://127.0.0.1:8770;
+        }
+        location ~ ^/api/projects/[^/]+/(?:generate|build|restore)/?$ {
+            client_max_body_size 128k;
+            limit_req zone=total burst=100 nodelay;
+            limit_req zone=build burst=4 nodelay;
+            proxy_pass http://127.0.0.1:8770;
+        }
+        location /api/ {
+            limit_req zone=total burst=100 nodelay;
+            limit_req zone=api burst=40 nodelay;
+            proxy_pass http://127.0.0.1:8770;
+        }
+        location / { proxy_pass http://127.0.0.1:8770; }
+    }
+}

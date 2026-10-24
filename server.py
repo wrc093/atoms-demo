@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Run with python3 server.py. Python 3.11+, no Python package installation."""
 import io
+import ipaddress
 import json
 import mimetypes
 import os
 import re
 import secrets
+import socket
 import sys
+import threading
 import zipfile
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -15,6 +18,7 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from backend.compiler import BuildError, compile_preview
 from backend.core import APIError, Workspace
+from backend.security import RateLimiter
 
 ROOT = Path(__file__).resolve().parent
 
@@ -54,10 +58,69 @@ def model_config():
 
 class Server(ThreadingHTTPServer):
     daemon_threads = True
+    request_queue_size = 32
 
-    def __init__(self, address, workspace, public_url=""):
+    def __init__(self, address, workspace, public_url="", *, max_connections=48, per_ip_connections=16, read_timeout=8, request_timeout=30, trusted_proxies=()):
         self.workspace, self.public_url = workspace, public_url.rstrip("/")
+        self.max_connections, self.per_ip_connections = max_connections, per_ip_connections
+        self.read_timeout, self.request_timeout = read_timeout, request_timeout
+        self.connection_lock = threading.Lock()
+        self.connections = {}
+        self.limiter = RateLimiter()
+        self.response_slots = threading.BoundedSemaphore(2)
+        self.trusted_proxies = tuple(ipaddress.ip_network(value) for value in trusted_proxies)
         super().__init__(address, Handler)
+
+    def is_trusted_proxy(self, ip):
+        return any(ipaddress.ip_address(ip) in network for network in self.trusted_proxies)
+
+    def process_request(self, request, client_address):
+        ip = client_address[0]  # Never trust client-supplied X-Forwarded-For.
+        with self.connection_lock:
+            admitted = sum(self.connections.values()) < self.max_connections and (self.is_trusted_proxy(ip) or self.connections.get(ip, 0) < self.per_ip_connections)
+            if admitted:
+                self.connections[ip] = self.connections.get(ip, 0) + 1
+        if not admitted:
+            return self.reject_connection(request, 503)
+        if not self.limiter.allow(('all',), 120, 180) or (not self.is_trusted_proxy(ip) and not self.limiter.allow(('ip', ip), 40, 80)):
+            self.release_connection(ip)
+            return self.reject_connection(request, 429)
+        request.settimeout(self.read_timeout)
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self.release_connection(ip)
+            raise
+
+    def release_connection(self, ip):
+        with self.connection_lock:
+            self.connections[ip] -= 1
+            if not self.connections[ip]:
+                del self.connections[ip]
+
+    def reject_connection(self, request, status):
+        try:
+            request.settimeout(.1)
+            reason = 'Too Many Requests' if status == 429 else 'Service Unavailable'
+            request.sendall(f'HTTP/1.0 {status} {reason}\r\nConnection: close\r\nContent-Length: 0\r\nRetry-After: 5\r\n\r\n'.encode())
+        except OSError:
+            pass
+        finally:
+            self.shutdown_request(request)
+
+    def process_request_thread(self, request, client_address):
+        def expire():
+            try: request.shutdown(socket.SHUT_RDWR)
+            except OSError: pass
+        # An absolute deadline also stops clients that trickle bytes forever.
+        deadline = threading.Timer(self.request_timeout, expire)
+        deadline.daemon = True
+        deadline.start()
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            deadline.cancel()
+            self.release_connection(client_address[0])
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -65,11 +128,24 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
         # No headers, request bodies, provider responses, credentials, or query strings.
-        print(f'{self.command} {urlsplit(self.path).path} {args[1] if len(args)>1 else ""}', flush=True)
+        try:path=urlsplit(getattr(self,'path','')).path[:256]
+        except ValueError:path='invalid-path'
+        command=getattr(self,'command','') or ''
+        status=args[0] if args and isinstance(args[0],int) else args[1] if len(args)>1 and re.fullmatch(r'\d{3}',str(args[1])) else ''
+        print(json.dumps({'method':command if re.fullmatch(r'[A-Z]{1,12}',command) else 'INVALID','path':path,'status':status}),flush=True)
 
     @property
     def ws(self):
         return self.server.workspace
+
+    def client_ip(self):
+        ip=self.client_address[0]
+        if self.server.is_trusted_proxy(ip):
+            values=self.headers.get_all('X-Real-IP', [])
+            if len(values)!=1:raise APIError(400,'代理客户端地址无效')
+            try:ip=str(ipaddress.ip_address(values[0]))
+            except ValueError:raise APIError(400,'代理客户端地址无效')
+        return ip
 
     def cookie_token(self):
         cookie = SimpleCookie()
@@ -82,6 +158,10 @@ class Handler(BaseHTTPRequestHandler):
         return f'forma_session={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={0 if clear else 2592000}{secure}'
 
     def send(self, status, body, mime="application/json; charset=utf-8", headers=None):
+        try:self.send_content(status,body,mime,headers)
+        except OSError:pass  # Expired/disconnected clients cannot trigger traceback logs.
+
+    def send_content(self, status, body, mime="application/json; charset=utf-8", headers=None):
         if isinstance(body,(dict,list)):
             body=json.dumps(body,ensure_ascii=False,allow_nan=False).encode()
         elif isinstance(body,str):body=body.encode()
@@ -92,6 +172,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options","nosniff")
         self.send_header("Referrer-Policy","same-origin")
         self.send_header("X-Frame-Options","SAMEORIGIN")
+        self.send_header("Permissions-Policy","camera=(), microphone=(), geolocation=(), payment=()")
+        if status == 429:self.send_header("Retry-After", "60")
+        if self.server.public_url.startswith("https:"):self.send_header("Strict-Transport-Security", "max-age=31536000")
         for key,value in (headers or {}).items():self.send_header(key,value)
         self.end_headers()
         if self.command!="HEAD":self.wfile.write(body)
@@ -100,16 +183,38 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get_content_type()!="application/json":raise APIError(415,"接口需要 application/json")
         try:length=int(self.headers.get("Content-Length","0"))
         except ValueError:raise APIError(400,"请求长度无效")
-        if not 0<length<=7_000_000:raise APIError(413,"请求内容过大或为空")
+        path=unquote(urlsplit(self.path).path)
+        limit=7_000_000 if path.endswith('/files') else 600_000 if path.endswith('/runtime') else 16_000 if path.startswith('/api/auth/') else 128_000
+        if not 0<length<=limit:raise APIError(413,"请求内容过大或为空")
         try:
-            body=json.loads(self.rfile.read(length),parse_constant=lambda _:(_ for _ in ()).throw(ValueError()))
+            raw=self.rfile.read(length)
+            if len(raw)!=length:raise ValueError()
+            # Bound nesting before invoking the recursive JSON decoder.
+            depth=0;quoted=False;escaped=False
+            for char in raw:
+                if quoted:
+                    if escaped:escaped=False
+                    elif char==92:escaped=True
+                    elif char==34:quoted=False
+                elif char==34:quoted=True
+                elif char in (91,123):
+                    depth+=1
+                    if depth>64:raise ValueError()
+                elif char in (93,125):depth-=1
+            body=json.loads(raw,parse_constant=lambda _:(_ for _ in ()).throw(ValueError()))
             if not isinstance(body,dict):raise ValueError()
             return body
-        except (ValueError,UnicodeDecodeError):raise APIError(400,"JSON 内容无效")
+        except (ValueError,UnicodeDecodeError,RecursionError):raise APIError(400,"JSON 内容无效")
 
     def dispatch(self):
+        if self.headers.get('Transfer-Encoding') or any(len(self.headers.get_all(name, []))>1 for name in ('Host','Content-Length','Origin','X-Forma-Request')):
+            raise APIError(400,"请求头无效")
         host=self.headers.get("Host", "")
-        hostname=urlsplit("//"+host).hostname
+        try:
+            parsed_host=urlsplit("//"+host);hostname=parsed_host.hostname
+            if parsed_host.username or parsed_host.password or parsed_host.path or parsed_host.query or parsed_host.fragment:raise ValueError()
+            parsed_host.port
+        except ValueError:raise APIError(400,"主机头无效")
         allowed={"127.0.0.1","localhost","::1"}
         if self.server.public_url:allowed.add(urlsplit(self.server.public_url).hostname)
         if hostname not in allowed:raise APIError(403,"主机不被允许")
@@ -125,6 +230,10 @@ class Handler(BaseHTTPRequestHandler):
             if method not in ("GET","HEAD"):raise APIError(405,"方法不支持")
             return self.static(parts)
         if parts==["api","health"] and method=="GET":return self.send(200,{"ok":True,"apiVersion":1})
+        ip=self.client_ip()
+        if not self.server.limiter.allow(('api',ip),20,80):raise APIError(429,"请求过于频繁，请稍后重试")
+        if parts[:2]==['api','auth'] and parts[-1] in ('login','register'):
+            if not self.server.limiter.allow(('auth',ip),.2,12):raise APIError(429,"登录请求过于频繁，请稍后重试")
         token=self.cookie_token();user=self.ws.session(token)
         if parts==["api","bootstrap"] and method=="POST":
             self.body()
@@ -136,13 +245,21 @@ class Handler(BaseHTTPRequestHandler):
                 if user:self.ws.clear_user_model(user["id"])
                 self.ws.logout(token);return self.send(200,{"ok":True},headers={"Set-Cookie":self.session_cookie("",True)})
             if action=="guest":raise APIError(401,"访客入口已关闭，请先注册或登录")
-            if action in ("register","login"):new_user=self.ws.auth(action,data,user,self.client_address[0])
+            if action in ("register","login"):new_user=self.ws.auth(action,data,user,ip)
             else:raise APIError(404,"接口不存在")
             if user and user["id"]!=new_user["id"]:self.ws.clear_user_model(user["id"])
             self.ws.logout(token);new_token=self.ws.new_session(new_user["id"])
             return self.send(200,{"user":new_user,"projects":self.ws.projects(new_user["id"]),"settings":self.ws.settings(new_user["id"])},headers={"Set-Cookie":self.session_cookie(new_token)})
         if not user or user["guest"]:raise APIError(401,"请先登录，再使用工作空间")
         owner=user["id"]
+        if not self.server.limiter.allow(('user',owner),20,80):raise APIError(429,"请求过于频繁，请稍后重试")
+        large=method=='GET' and (parts[-1] in ('files','versions','preview','export') or len(parts)==3 and parts[:2]==['api','projects']) or method=='PUT' and parts[-1]=='files'
+        expensive=(method=='GET' and parts[-1] in ('files','versions','preview','export')) or parts[-1] in ('generate','build','restore') or parts==['api','model-connection'] and method=='PUT'
+        if expensive and (not self.server.limiter.allow(('expensive',owner),.5,8) or not self.server.limiter.allow(('expensive-all',),4,16)):
+            raise APIError(429,"构建或预览请求过于频繁，请稍后重试")
+        if large:
+            if not self.server.response_slots.acquire(blocking=False):raise APIError(429,'文件服务繁忙，请稍后重试')
+            self.response_slot=True
         if parts==["api","model-connection"]:
             if method=="GET":return self.send(200,{"settings":self.ws.settings(owner)})
             if method=="PUT":return self.send(200,{"settings":self.ws.set_user_model(owner,self.body())})
@@ -214,16 +331,23 @@ class Handler(BaseHTTPRequestHandler):
                 route="/workspace/"+project+"?view="+(view if view in ("preview","editor","files") else "preview") if re.fullmatch(r"p_[a-f0-9]{24}",project) else "/projects"
                 return self.send(303,"","text/plain; charset=utf-8",{"Location":"/#/login?next="+quote(route,safe="")})
         mime=mimetypes.guess_type(str(target))[0] or "application/octet-stream"
-        return self.send(200,target.read_bytes(),mime)
+        # frame-src is enforced on subsequent child navigations too. In the
+        # workbench, allowing 'self' would let generated code exfiltrate runtime
+        # data in a navigation URL even though its own connect-src is 'none'.
+        policy="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'self'; frame-src "+("blob:" if parts==['workbench.html'] else "'self'")+"; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'"
+        return self.send(200,target.read_bytes(),mime,{"Content-Security-Policy":policy} if target.suffix=='.html' else None)
 
     def handle_request(self):
+        self.response_slot=False
         try:self.dispatch()
-        except (BrokenPipeError,ConnectionResetError):pass
+        except (OSError,TimeoutError):pass
         except APIError as error:self.send(error.status,{"error":error.message})
         except BuildError as error:self.send(422,{"error":str(error)})
         except Exception:
             print("Request failed (details withheld)",file=sys.stderr)
             self.send(500,{"error":"服务器暂时无法完成请求，请稍后重试"})
+        finally:
+            if self.response_slot:self.server.response_slots.release()
 
     do_GET=handle_request
     do_HEAD=handle_request
@@ -240,7 +364,8 @@ def main():
     if not database.is_absolute():database=ROOT/database
     database.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
     workspace=Workspace(database,model_config());database.chmod(0o600)
-    server=Server((host,port),workspace,os.environ.get("FORMA_PUBLIC_URL",""))
+    proxies=tuple(value.strip() for value in os.environ.get('FORMA_TRUSTED_PROXIES','').split(',') if value.strip())
+    server=Server((host,port),workspace,os.environ.get("FORMA_PUBLIC_URL",""),trusted_proxies=proxies)
     print(f'Forma ready: http://{host}:{server.server_port}',flush=True)
     print('Model configured: '+str(workspace.model_ready()),flush=True)
     try:server.serve_forever()

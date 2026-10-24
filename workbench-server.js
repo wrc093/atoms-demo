@@ -8,6 +8,7 @@
   const thread=product.querySelector('.fm-thread'),target=product.querySelector('.fm-preview-target'),overlay=product.querySelector('.fm-overlay');
   let threadSignature='',detail,loadedVersion=0,previewToken='',pollTimer,toastTimer,opener,selectedVersion,reviewRequest=0;
   const runtimeQueues=new Map();
+  let runtimePending=0,runtimeWindow=0,runtimeCount=0;
   target.innerHTML='<iframe class="fm-running-app" title="生成应用的交互预览" sandbox="allow-scripts allow-forms allow-modals"></iframe>';
   const frame=target.querySelector('iframe');
   thread.innerHTML='<p class="fm-response">正在读取服务端项目…</p>';
@@ -137,8 +138,13 @@
     if(message.type==='forma-runtime-error'){toast('应用运行提示：'+message.message);return;}
     if(message.type!=='forma-runtime-set')return;
     const token=previewToken;const source=event.source;
-    try{const task=(runtimeQueues.get(message.key)||Promise.resolve()).catch(()=>{}).then(()=>FormaAPI.request(api('/runtime'),'PUT',{key:message.key,value:message.value}));runtimeQueues.set(message.key,task);await task;if(runtimeQueues.get(message.key)===task)runtimeQueues.delete(message.key);source.postMessage({type:'forma-runtime-result',token,id:message.id},'*');}
+    const now=performance.now();if(now-runtimeWindow>1000){runtimeWindow=now;runtimeCount=0;}
+    if(!Number.isSafeInteger(message.id)||message.id<1||typeof message.key!=='string'||!/^[A-Za-z0-9_-]{1,80}$/.test(message.key)||['__proto__','constructor','prototype'].includes(message.key)||runtimePending>=24||++runtimeCount>20){source.postMessage({type:'forma-runtime-result',token,id:message.id,error:'保存请求无效或过于频繁，请稍后重试'},'*');return;}
+    runtimePending++;
+    let task;
+    try{if(JSON.stringify(message.value)?.length>500000)throw new Error('单项应用数据超过限制');task=(runtimeQueues.get(message.key)||Promise.resolve()).catch(()=>{}).then(()=>{if(token!==previewToken)throw new Error('预览版本已更新，请重试');return FormaAPI.request(api('/runtime'),'PUT',{key:message.key,value:message.value});});runtimeQueues.set(message.key,task);await task;source.postMessage({type:'forma-runtime-result',token,id:message.id},'*');}
     catch(error){source.postMessage({type:'forma-runtime-result',token,id:message.id,error:error.message},'*');toast('应用数据未能保存：'+error.message);}
+    finally{runtimePending--;if(task&&runtimeQueues.get(message.key)===task)runtimeQueues.delete(message.key);}
   });
   window.addEventListener('forma-user-model-selected',()=>{mode.value='byok';});
   window.addEventListener('forma-model-connection-change',()=>{mode.innerHTML=FormaModel.options(mode.value||'byok');});

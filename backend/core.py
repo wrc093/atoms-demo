@@ -12,6 +12,7 @@ import time
 import urllib.error
 import urllib.request
 from contextlib import contextmanager
+from functools import wraps
 from pathlib import Path
 
 from .compiler import BuildError, safe_path, validate
@@ -22,6 +23,21 @@ from .providers import ProviderError, user_config, request_user_model
 class APIError(Exception):
     def __init__(self, status, message):
         self.status, self.message = status, message
+
+
+def bounded_work(attribute):
+    def decorate(function):
+        @wraps(function)
+        def run(self, *args, **kwargs):
+            slots = getattr(self, attribute)
+            if not slots.acquire(blocking=False):
+                raise APIError(429, "服务正在处理其他请求，请稍后重试")
+            try:
+                return function(self, *args, **kwargs)
+            finally:
+                slots.release()
+        return run
+    return decorate
 
 
 def now():
@@ -67,6 +83,12 @@ def file_json(row):
 
 
 class Workspace:
+    limits = {"users":200, "projects":20, "all_projects":1000, "files":200,
+              "all_files":20000, "file_bytes":512_000_000, "versions":100,
+              "version_bytes":50_000_000, "all_version_bytes":512_000_000,
+              "jobs":500, "all_jobs":20000, "runtime_keys":200,
+              "daily_ai_user":20, "daily_ai_global":60}
+
     def __init__(self, db_path, config=None):
         self.path = str(db_path)
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
@@ -74,6 +96,8 @@ class Workspace:
         self.user_models = {}
         self.model_lock = threading.RLock()
         self.slots = threading.BoundedSemaphore(3)
+        self.queue_slots = threading.BoundedSemaphore(12)
+        self.auth_slots = threading.BoundedSemaphore(2)
         with self.db() as c:
             c.executescript("""
             PRAGMA journal_mode=WAL;
@@ -88,7 +112,12 @@ class Workspace:
             CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT,project TEXT NOT NULL REFERENCES projects(id),role TEXT NOT NULL,text TEXT NOT NULL,job TEXT,version INTEGER,created INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS runtime_data(project TEXT NOT NULL REFERENCES projects(id),key TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(project,key));
             CREATE TABLE IF NOT EXISTS auth_attempts(bucket TEXT PRIMARY KEY,count INTEGER NOT NULL,expires INTEGER NOT NULL);
+            CREATE INDEX IF NOT EXISTS projects_owner ON projects(owner);
+            CREATE INDEX IF NOT EXISTS jobs_project ON jobs(project);
             """)
+            if 'bytes' not in {row['name'] for row in c.execute('PRAGMA table_info(versions)')}:
+                c.execute('ALTER TABLE versions ADD COLUMN bytes INTEGER NOT NULL DEFAULT 0')
+                c.execute('UPDATE versions SET bytes=length(CAST(files AS BLOB))')
             # Interrupted work is visible and retryable after a server restart.
             c.execute("UPDATE jobs SET status='failed',error='服务重启中断了任务，请重试',updated=? WHERE status IN ('queued','running')", (now(),))
             c.execute("UPDATE projects SET stage=CASE WHEN current_version>0 THEN 'ready' ELSE 'planning' END WHERE stage='building'")
@@ -148,7 +177,9 @@ class Workspace:
     def new_session(self, user_id):
         token = secrets.token_urlsafe(32)
         with self.db() as c:
+            c.execute("BEGIN IMMEDIATE")
             c.execute("DELETE FROM sessions WHERE expires<?", (now(),))
+            c.execute("DELETE FROM sessions WHERE token IN (SELECT token FROM sessions WHERE user=? ORDER BY expires DESC LIMIT -1 OFFSET 9)", (user_id,))
             c.execute("INSERT INTO sessions VALUES(?,?,?)", (hashlib.sha256(token.encode()).hexdigest(), user_id, now() + 30 * 86400_000))
         return token
 
@@ -156,19 +187,24 @@ class Workspace:
         with self.db() as c:
             c.execute("DELETE FROM sessions WHERE token=?", (hashlib.sha256((token or "").encode()).hexdigest(),))
 
+    @bounded_work('auth_slots')
     def auth(self, mode, data, current, bucket):
         email = str(data.get("email", "")).strip().lower()
         password = data.get("password", "")
         name = str(data.get("name", "")).strip()[:24] or email.split("@")[0][:24]
         if not re.fullmatch(r"[^\s@]{1,100}@[^\s@]{1,100}\.[^\s@]{1,40}", email) or not isinstance(password, str) or not 8 <= len(password) <= 128:
             raise APIError(400, "请使用有效邮箱，以及 8–128 位密码")
-        bucket = hashlib.sha256((bucket + email).encode()).hexdigest()
+        buckets = [('global', 300), ('ip:'+bucket, 30), ('email:'+email, 12)]
+        buckets = [(hashlib.sha256(key.encode()).hexdigest(), limit) for key, limit in buckets]
         with self.db() as c:
             c.execute("BEGIN IMMEDIATE")
-            attempt = c.execute("SELECT * FROM auth_attempts WHERE bucket=? AND expires>?", (bucket, now())).fetchone()
-            if attempt and attempt["count"] >= 12:
-                raise APIError(429, "尝试次数过多，请 15 分钟后再试")
-            c.execute("INSERT INTO auth_attempts VALUES(?,1,?) ON CONFLICT(bucket) DO UPDATE SET count=CASE WHEN expires<? THEN 1 ELSE count+1 END,expires=CASE WHEN expires<? THEN excluded.expires ELSE expires END", (bucket, now()+900_000, now(), now()))
+            c.execute("DELETE FROM auth_attempts WHERE expires<=?", (now(),))
+            for key, limit in buckets:
+                attempt = c.execute("SELECT count FROM auth_attempts WHERE bucket=?", (key,)).fetchone()
+                if attempt and attempt['count']>=limit:
+                    raise APIError(429, "尝试次数过多，请 15 分钟后再试")
+            for key, _ in buckets:
+                c.execute("INSERT INTO auth_attempts VALUES(?,1,?) ON CONFLICT(bucket) DO UPDATE SET count=count+1", (key, now()+900_000))
         with self.db() as c:
             row = c.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
             if mode == "register":
@@ -176,6 +212,9 @@ class Workspace:
                     raise APIError(409, "这个邮箱已注册，请直接登录")
                 user_id = current["id"] if current and current["guest"] else uid("u_")
                 try:
+                    c.execute("BEGIN IMMEDIATE")
+                    if c.execute('SELECT COUNT(*) FROM users').fetchone()[0]>=self.limits['users'] and not (current and current['guest']):
+                        raise APIError(429, '注册容量已满，请联系管理员')
                     if current and current["guest"]:
                         c.execute("UPDATE users SET name=?,email=?,password=?,guest=0 WHERE id=?", (name,email,password_hash(password),user_id))
                     else:
@@ -187,7 +226,6 @@ class Workspace:
                 raise APIError(401, "邮箱或密码不正确")
             if mode == "login" and current and current["guest"] and current["id"] != row["id"]:
                 c.execute("UPDATE projects SET owner=? WHERE owner=?", (row["id"],current["id"]))
-            c.execute("DELETE FROM auth_attempts WHERE bucket=?", (bucket,))
             return user_json(row)
 
     def owned(self, c, owner, project_id):
@@ -208,6 +246,9 @@ class Workspace:
         if kind not in ("reading", "todo", "portfolio", "custom"):
             kind = "custom"
         with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            if c.execute('SELECT COUNT(*) FROM projects WHERE owner=?',(owner,)).fetchone()[0]>=self.limits['projects'] or c.execute('SELECT COUNT(*) FROM projects').fetchone()[0]>=self.limits['all_projects']:
+                raise APIError(429, '项目数量已达上限，请联系管理员')
             project_id = uid("p_")
             c.execute("INSERT INTO projects(id,owner,name,prompt,type,updated) VALUES(?,?,?,?,?,?)", (project_id,owner,name,prompt,kind,now()))
             return project_json(c.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone())
@@ -242,6 +283,7 @@ class Workspace:
         if assets.intersection(file["path"] for file in files):
             raise APIError(409,"源码路径与上传素材冲突，请先重命名素材再构建")
         c.execute("DELETE FROM files WHERE project=? AND kind='source'", (project_id,))
+        self.check_file_quota(c,project_id,len(files),sum(len(f['text'].encode()) for f in files))
         revision=c.execute("SELECT source_revision+1 FROM projects WHERE id=?", (project_id,)).fetchone()[0]
         for file in files:
             mime = mimetypes.guess_type(file["path"])[0] or "text/plain"
@@ -250,7 +292,12 @@ class Workspace:
 
     def snapshot(self, c, project_id, summary, provider):
         number = c.execute("SELECT COALESCE(MAX(number),0)+1 FROM versions WHERE project=?", (project_id,)).fetchone()[0]
-        c.execute("INSERT INTO versions VALUES(?,?,?,?,?,?)", (project_id,number,summary[:500],provider,encode(self.sources(c,project_id)),now()))
+        files=encode(self.sources(c,project_id));size=len(files.encode())
+        count,total=c.execute('SELECT COUNT(*),COALESCE(SUM(bytes),0) FROM versions WHERE project=?',(project_id,)).fetchone()
+        all_bytes=c.execute('SELECT COALESCE(SUM(bytes),0) FROM versions').fetchone()[0]
+        if count>=self.limits['versions'] or total+size>self.limits['version_bytes'] or all_bytes+size>self.limits['all_version_bytes']:
+            raise APIError(413,'源码版本存储已达上限，请联系管理员；现有历史保留')
+        c.execute("INSERT INTO versions(project,number,summary,provider,files,created,bytes) VALUES(?,?,?,?,?,?,?)", (project_id,number,summary[:500],provider,files,now(),size))
         c.execute("UPDATE projects SET current_version=?,dirty=0,stage='ready',updated=? WHERE id=?", (number,now(),project_id))
         return number
 
@@ -291,8 +338,10 @@ class Workspace:
             size = c.execute("SELECT COALESCE(SUM(length(data)),0) FROM files WHERE project=?", (project_id,)).fetchone()[0]
             if size - (len(old["data"]) if old else 0) + len(content)>25_000_000:
                 raise APIError(413, "项目文件总大小不能超过 25 MB")
+            self.check_file_quota(c,project_id,int(not old),len(content)-(len(old['data']) if old else 0))
             kind = old["kind"] if old else ("source" if data.get("kind")=="source" else "asset")
             if kind=="source":
+                if not old and c.execute("SELECT COUNT(*) FROM files WHERE project=? AND kind='source'",(project_id,)).fetchone()[0]>=40:raise APIError(413,'源码文件数量不能超过 40')
                 try: content.decode()
                 except UnicodeDecodeError: raise APIError(400, "源码必须使用 UTF-8 文本")
             mime = str(data.get("mime") or mimetypes.guess_type(path)[0] or "application/octet-stream")[:120]
@@ -301,6 +350,13 @@ class Workspace:
             c.execute("UPDATE projects SET source_revision=source_revision+?,dirty=CASE WHEN ? THEN 1 ELSE dirty END,updated=? WHERE id=?", (int(kind=="source"),kind=="source",now(),project_id))
             return file_json(c.execute("SELECT * FROM files WHERE project=? AND path=?", (project_id,path)).fetchone())
 
+    def check_file_quota(self,c,project_id,added,byte_delta):
+        count,size=c.execute('SELECT COUNT(*),COALESCE(SUM(length(data)),0) FROM files WHERE project=?',(project_id,)).fetchone()
+        all_count,all_size=c.execute('SELECT COUNT(*),COALESCE(SUM(length(data)),0) FROM files').fetchone()
+        if count+added>self.limits['files'] or all_count+added>self.limits['all_files'] or size+byte_delta>25_000_000 or all_size+byte_delta>self.limits['file_bytes']:
+            raise APIError(413,'文件数量或存储已达上限，请联系管理员')
+
+    @bounded_work('slots')
     def build_saved(self, owner, project_id):
         with self.db() as c:
             row=self.owned(c,owner,project_id);self.busy(c,project_id)
@@ -314,6 +370,7 @@ class Workspace:
             c.execute("INSERT INTO messages(project,role,text,version,created) VALUES(?,?,?,?,?)",(project_id,"assistant","代码校验通过，预览已更新。",number,now()))
         return number
 
+    @bounded_work('slots')
     def restore(self, owner, project_id, number):
         with self.db() as c:
             self.owned(c,owner,project_id);self.busy(c,project_id)
@@ -351,7 +408,9 @@ class Workspace:
         if len(text.encode())>500_000:raise APIError(413,"单项应用数据超过 500 KB")
         with self.db() as c:
             c.execute("BEGIN IMMEDIATE");self.owned(c,owner,project_id)
-            size=c.execute("SELECT COALESCE(SUM(length(value)),0) FROM runtime_data WHERE project=? AND key!=?",(project_id,key)).fetchone()[0]
+            if not c.execute('SELECT 1 FROM runtime_data WHERE project=? AND key=?',(project_id,key)).fetchone() and c.execute('SELECT COUNT(*) FROM runtime_data WHERE project=?',(project_id,)).fetchone()[0]>=self.limits['runtime_keys']:
+                raise APIError(413,'应用数据键数量已达上限')
+            size=c.execute("SELECT COALESCE(SUM(length(CAST(value AS BLOB))),0) FROM runtime_data WHERE project=? AND key!=?",(project_id,key)).fetchone()[0]
             if size+len(text.encode())>2_000_000:raise APIError(413,"应用数据超过 2 MB")
             c.execute("INSERT OR REPLACE INTO runtime_data VALUES(?,?,?)",(project_id,key,text))
 
@@ -368,6 +427,17 @@ class Workspace:
             return self.job_dict(c,row)
 
     def enqueue(self,owner,project_id,data):
+        if not self.queue_slots.acquire(blocking=False):
+            raise APIError(429,'构建队列已满，请稍后重试')
+        try:
+            job_id,model_config=self.prepare_job(owner,project_id,data)
+            threading.Thread(target=self.run_job,args=(job_id,model_config),daemon=True).start()
+        except Exception:
+            self.queue_slots.release()
+            raise
+        return self.get_job(owner,job_id)
+
+    def prepare_job(self,owner,project_id,data):
         mode=data.get("mode","starter");operation=data.get("operation","modify")
         prompt=str(data.get("prompt","")).strip()
         if mode not in ("starter","ai","byok") or operation not in ("build","modify") or not 1<=len(prompt)<=6000:raise APIError(400,"生成参数无效")
@@ -379,6 +449,16 @@ class Workspace:
             c.execute("BEGIN IMMEDIATE");project=self.owned(c,owner,project_id);self.busy(c,project_id)
             if c.execute("SELECT COUNT(*) FROM jobs WHERE status IN ('queued','running')").fetchone()[0]>=12:
                 raise APIError(429,"构建队列已满，请稍后重试")
+            if c.execute('SELECT COUNT(*) FROM jobs WHERE project=?',(project_id,)).fetchone()[0]>=self.limits['jobs'] or c.execute('SELECT COUNT(*) FROM jobs').fetchone()[0]>=self.limits['all_jobs']:
+                raise APIError(429,'任务历史数量已达上限，请联系管理员')
+            if c.execute("SELECT COUNT(*) FROM jobs JOIN projects ON projects.id=jobs.project WHERE projects.owner=? AND status IN ('queued','running')",(owner,)).fetchone()[0]>=3:
+                raise APIError(429,'你已有 3 个构建任务，请等待完成')
+            if mode=='ai':
+                day=now()-86400_000
+                user_count=c.execute("SELECT COUNT(*) FROM jobs JOIN projects ON projects.id=jobs.project WHERE projects.owner=? AND mode='ai' AND created>?",(owner,day)).fetchone()[0]
+                total=c.execute("SELECT COUNT(*) FROM jobs WHERE mode='ai' AND created>?",(day,)).fetchone()[0]
+                if user_count>=self.limits['daily_ai_user'] or total>=self.limits['daily_ai_global']:
+                    raise APIError(429,'平台模型已达 24 小时构建额度，请稍后或使用自己的 API Key')
             plan=json.loads(project["plan"])
             plan["mode"]=mode
             if not plan.get("appName") or not plan.get("goal"):raise APIError(400,"请先确认应用方案")
@@ -388,8 +468,7 @@ class Workspace:
             c.execute("UPDATE projects SET stage='building',updated=? WHERE id=?",(stamp,project_id))
             c.execute("INSERT INTO messages(project,role,text,job,created) VALUES(?,?,?,?,?)",(project_id,"user",prompt,job_id,stamp))
             c.execute("INSERT INTO job_events(job,step,text,created) VALUES(?,0,?,?)",(job_id,"任务已进入队列",stamp))
-        threading.Thread(target=self.run_job,args=(job_id,model_config),daemon=True).start()
-        return self.get_job(owner,job_id)
+        return job_id,model_config
 
     def event(self,job_id,step,text):
         with self.db() as c:
@@ -463,6 +542,9 @@ class Workspace:
                 if result.rowcount:c.execute("UPDATE projects SET stage=CASE WHEN current_version>0 THEN 'ready' ELSE 'planning' END WHERE id=(SELECT project FROM jobs WHERE id=?)",(job_id,))
         finally:
             if acquired:self.slots.release()
+            # Cancellation must not free capacity while the provider call or
+            # queued worker still exists; otherwise cancel/retry creates threads.
+            self.queue_slots.release()
 
     def generate(self,plan,files,prompt,config=None):
         config = config or self.config
