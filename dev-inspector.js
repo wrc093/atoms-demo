@@ -8,13 +8,53 @@
     <div class="highlight" hidden></div>
     <div class="tooltip" hidden aria-hidden="true"><div class="tag"></div><strong class="identity"></strong><code class="selector"></code><small class="geometry"></small></div>
     <aside class="dock" aria-label="前端开发者工具">
-      <button class="toggle" type="button" aria-pressed="false" aria-label="开启开发者模式" title="开发者模式 · Alt + Shift + D"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M7 4H4v3m9-3h3v3M4 13v3h3m9-3v3h-3M7 10h6m-3-3v6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span>开发者模式</span><i></i></button>
+      <button class="toggle" type="button" aria-pressed="false" aria-label="开启开发者模式" title="拖动移动 · Alt + 方向键微调 · Alt + Shift + D 开关"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M7 4H4v3m9-3h3v3M4 13v3h3m9-3v3h-3M7 10h6m-3-3v6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span>开发者模式</span><i></i></button>
       <section class="controls" hidden><p>悬停查看 · Alt + 点击固定 · Esc 退出</p><div class="actions"><button class="copy" type="button" disabled>复制定位</button><button class="freeze" type="button" disabled aria-pressed="false">固定元素</button></div><span class="status" role="status" aria-live="polite">移动鼠标，查看任意界面元素。</span><textarea class="manual-copy" readonly aria-label="元素定位信息，复制失败时可手动选择" hidden></textarea></section>
     </aside>`;
   document.body.append(host);
   const $ = selector => shadow.querySelector(selector);
   const highlight=$('.highlight'), tip=$('.tooltip'), toggle=$('.toggle'), controls=$('.controls');
   const copy=$('.copy'), freeze=$('.freeze'), status=$('.status'), manual=$('.manual-copy');
+  const dock=$('.dock'),positionKey='forma-dev-inspector-position';
+  let position=null,drag=null,dragged=false;
+  try{const saved=JSON.parse(localStorage.getItem(positionKey));if(Number.isFinite(saved?.x)&&Number.isFinite(saved?.y))position=saved;}catch{}
+  function placeDock(x,y,persist=false){
+    if(!dock.offsetWidth||!dock.offsetHeight||getComputedStyle(dock).position==='static')return;
+    const margin=8;
+    position={x:Math.max(margin,Math.min(x,innerWidth-dock.offsetWidth-margin)),y:Math.max(margin,Math.min(y,innerHeight-dock.offsetHeight-margin))};
+    Object.assign(dock.style,{left:position.x+'px',top:position.y+'px',bottom:'auto'});
+    if(persist)try{localStorage.setItem(positionKey,JSON.stringify(position));}catch{}
+  }
+  function keepDockInView(){const box=dock.getBoundingClientRect();placeDock(position?.x??box.left,position?.y??box.top);}
+  toggle.addEventListener('pointerdown',event=>{
+    if(event.button!==0||!event.isPrimary)return;
+    const box=dock.getBoundingClientRect();
+    dragged=false;drag={id:event.pointerId,x:event.clientX,y:event.clientY,left:box.left,top:box.top};
+    toggle.setPointerCapture(event.pointerId);
+  });
+  toggle.addEventListener('pointermove',event=>{
+    if(!drag||event.pointerId!==drag.id)return;
+    const dx=event.clientX-drag.x,dy=event.clientY-drag.y;
+    if(!dragged&&Math.hypot(dx,dy)<5)return;
+    dragged=true;dock.classList.add('dragging');event.preventDefault();
+    placeDock(drag.left+dx,drag.top+dy);
+  });
+  function finishDrag(event){
+    if(!drag||event.pointerId!==drag.id)return;
+    const pointer=drag.id;drag=null;dock.classList.remove('dragging');
+    if(dragged&&position)placeDock(position.x,position.y,true);
+    if(toggle.hasPointerCapture(pointer))toggle.releasePointerCapture(pointer);
+  }
+  toggle.addEventListener('pointerup',finishDrag);
+  toggle.addEventListener('pointercancel',finishDrag);
+  toggle.addEventListener('lostpointercapture',finishDrag);
+  toggle.addEventListener('keydown',event=>{
+    const offset={ArrowLeft:[-12,0],ArrowRight:[12,0],ArrowUp:[0,-12],ArrowDown:[0,12]}[event.key];
+    if(!event.altKey||!offset)return;
+    event.preventDefault();event.stopPropagation();const box=dock.getBoundingClientRect();placeDock(box.left+offset[0],box.top+offset[1],true);
+  });
+  const dockObserver=new ResizeObserver(keepDockInView);dockObserver.observe(dock);
+  window.addEventListener('resize',keepDockInView);
   const documents=new Map();
   let enabled=false, pinned=false, current=null, info=null, paintFrame=0, scanFrame=0, clipboardTimer;
   const escape=value=>CSS.escape(String(value));
@@ -95,7 +135,7 @@
     if(element.namespaceURI==='http://www.w3.org/2000/svg')element=element.closest('svg')||element;
     return element;
   }
-  function move(event){if(!enabled||pinned)return;const target=pick(event);if(target)show(target);}
+  function move(event){if(!enabled||pinned||drag)return;const target=pick(event);if(target)show(target);}
   function setPinned(value){pinned=!!value&&!!current;freeze.textContent=pinned?'继续跟随':'固定元素';freeze.setAttribute('aria-pressed',String(pinned));schedulePaint();}
   function click(event){if(!enabled||!event.altKey)return;const target=pick(event);if(!target)return;event.preventDefault();event.stopImmediatePropagation();show(target);setPinned(true);}
   function key(event){
@@ -132,7 +172,7 @@
     try{sessionStorage.setItem('forma-dev-inspector',String(enabled));}catch{}
     if(enabled)scan();else{cancelAnimationFrame(scanFrame);scanFrame=0;for(const cleanup of documents.values())cleanup();documents.clear();}
   }
-  toggle.addEventListener('click',()=>setEnabled(!enabled));
+  toggle.addEventListener('click',event=>{if(dragged&&event.detail!==0){dragged=false;event.preventDefault();event.stopPropagation();return;}setEnabled(!enabled);});
   freeze.addEventListener('click',()=>setPinned(!pinned));
   copy.addEventListener('click',async()=>{
     if(!current||!info)return;
