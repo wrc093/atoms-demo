@@ -10,7 +10,7 @@ from pathlib import Path, PurePosixPath
 from unittest.mock import patch
 
 from backend.core import APIError, Workspace
-from server import Handler, Server
+from backend.server import Handler, Server
 
 
 class AttackRegressionTest(unittest.TestCase):

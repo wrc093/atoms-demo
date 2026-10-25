@@ -49,8 +49,9 @@ Python 槽位、部分速率限制和用户 Key 都是单进程状态，不能�
 ## 验证
 
 ```bash
-python3 -m unittest discover -s tests -v
-node --check workbench-server.js
+python3 -m unittest discover -s backend/tests -v
+npm --prefix frontend run check
+npm --prefix frontend test
 ```
 
 全部回归使用临时数据库、少量本机请求和模型替身。浏览器另验证父 CSP 对同源/跨源导航的拦截，以及正常沙箱按钮和运行数据桥的保存回执。它们证明已覆盖路径的修复，不代表穷尽所有攻击或完成公网压力测试。

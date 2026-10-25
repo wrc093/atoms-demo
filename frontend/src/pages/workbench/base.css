@@ -1,59 +1,3 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Forma — 创作工作台</title><script src="assets/lucide/lucide.min.js"></script><style>body{margin:0;background:#f8f7f3;color-scheme:light!important}#forma-design{color-scheme:light!important}#forma-design .fm-product{min-height:100vh!important;border:0!important;border-radius:0!important;display:flex;flex-direction:column}#forma-design .fm-workspace{flex:1}#forma-design .fm-canvas{align-content:center}#forma-design .fm-header{flex-shrink:0}#forma-design .fm-projectbar{flex-shrink:0}#forma-design .fm-input-note{font-size:10px}#forma-design .fm-prototype{color:#8b9781}@media(min-width:800px){#forma-design .rd-app{min-height:490px}#forma-design .rd-intro{min-height:190px}#forma-design .rd-cover{height:110px}}</style><script>
-try{document.documentElement.dataset.theme=localStorage.getItem('forma-theme')||'light'}catch{}
-</script></head><body><div id="forma-design" class="workbench-root" aria-label="应用构建工作台设计方向" data-previous-label="上一个方向" data-next-label="下一个方向">
-  <section data-variant="留白工作室" aria-label="留白工作室">
-    <div class="fm-product fm-studio" data-layout="studio" aria-label="留白工作室界面">
-      <header class="fm-header">
-        <div class="fm-brand"><span class="fm-symbol">f</span><span>forma<span class="fm-brand-dot">.</span></span></div>
-        <span class="fm-slash">/</span><button class="fm-project-button" data-action="projects">个人空间 <i data-lucide="chevron-down"></i></button>
-        <div class="fm-header-spacer"></div><span class="fm-prototype">交互设计稿</span><button class="fm-avatar" aria-label="打开项目列表" data-action="projects">W</button>
-      </header>
-      <div class="fm-projectbar"><div class="fm-project-name"><span class="fm-project-icon"><i data-lucide="book-open"></i></span><span>拾光 · 阅读收藏夹<small>每个想法，都值得被做出来。</small></span></div><div class="fm-project-actions"><button class="fm-iconbutton" data-action="new" aria-label="创建新项目"><i data-lucide="plus"></i></button><button class="fm-quiet" data-action="history"><i data-lucide="history"></i>版本</button><button class="fm-primary" data-action="share">分享预览<i data-lucide="arrow-up-right"></i></button></div></div>
-      <main class="fm-workspace">
-        <aside class="fm-conversation">
-          <div class="fm-conversation-top"><span>一起构建</span><span class="fm-live"><span></span>已就绪</span></div>
-          <div class="fm-thread">
-            <div class="fm-user-message">做一个有设计感的阅读收藏夹。可以收藏文章、按分类筛选，整体安静一点。</div>
-            <div class="fm-agent-title"><span class="fm-agent-mark">f</span>Forma <span>构建助手</span></div>
-            <p class="fm-response">让收藏不再只是堆积。我会做一个有呼吸感的阅读空间，让你更容易回到真正想读的内容。</p>
-            <button class="fm-process" data-action="process" aria-expanded="false"><span><i data-lucide="check"></i>已完成 4 个构建步骤</span><i data-lucide="chevron-down"></i></button>
-            <div class="fm-steps" hidden><span><i data-lucide="check"></i>整理页面结构与交互</span><span><i data-lucide="check"></i>构建收藏与分类组件</span><span><i data-lucide="check"></i>连接本地演示数据</span><span><i data-lucide="check"></i>检查布局与响应式</span></div>
-            <p class="fm-response">第一版已经准备好了。试试收藏文章，或者告诉我你想调整的地方。</p>
-            <button class="fm-version-card" data-action="current"><span class="fm-version-thumb"><i data-lucide="layout-template"></i></span><span>拾光 · 初始版本<small>版本 1 <span>·</span> 预览已就绪</small></span><i data-lucide="arrow-up-right"></i></button>
-            <div class="fm-followup" aria-live="polite"></div>
-          </div>
-          <div class="fm-composer-area"><div class="fm-suggestions"><button data-action="warm">换成暖橙色调 <i data-lucide="plus"></i></button><button data-action="rename">更换应用名称 <i data-lucide="plus"></i></button></div><form class="fm-composer"><textarea rows="2" aria-label="描述你想修改的内容" placeholder="继续打磨你的想法…"></textarea><div><span><i data-lucide="sparkles"></i> 构建模式</span><button type="submit" aria-label="提交修改"><i data-lucide="arrow-up"></i></button></div></form><span class="fm-input-note">描述你想要的改变，画布会随之更新</span></div>
-        </aside>
-        <section class="fm-canvas-zone"><div class="fm-canvas-toolbar"><div class="fm-view-tabs"><button class="fm-selected" data-action="preview"><i data-lucide="app-window"></i>预览</button><button data-action="files"><i data-lucide="code-2"></i>文件</button></div><span class="fm-address"><span></span>shiguang.forma.app</span><div class="fm-device"><button class="fm-selected" data-action="desktop" aria-label="桌面预览"><i data-lucide="monitor"></i></button><button data-action="mobile" aria-label="手机预览"><i data-lucide="smartphone"></i></button></div></div><div class="fm-canvas"><div class="fm-preview-target"></div><div class="fm-files" hidden><div><i data-lucide="folder-open"></i> 拾光 / src</div><pre>src/
-  App.tsx
-  components/
-    ArticleCard.tsx
-    CollectionFilter.tsx
-  styles/
-    theme.css
-
-// 设计稿中的文件结构示意
-// 预览交互可直接体验</pre></div></div><div class="fm-canvas-footer"><span><span class="fm-tiny-dot"></span>所有更改已反映在预览中</span><span>设计稿 · 本地交互</span></div></section>
-      </main>
-      <div class="fm-overlay" hidden></div><div class="fm-toast" role="status" hidden></div>
-    </div>
-  </section>
-
-</div>
-<template id="fm-reading-template">
-  <div class="rd-app" aria-label="阅读收藏夹预览">
-    <nav class="rd-nav"><span class="rd-logo"><span>◒</span><b data-app-name>拾光</b><small>READ A LITTLE, GROW A LITTLE.</small></span><span class="rd-avatar">W</span></nav>
-    <div class="rd-content"><div class="rd-intro"><div><span class="rd-eyebrow">YOUR LITTLE CORNER OF THE INTERNET</span><h1>好内容，<br>值得慢慢读<span>。</span></h1><p>留住偶然遇见的灵感，在自己的节奏里探索。</p></div><div class="rd-art" aria-hidden="true"><span class="rd-art-circle"></span><span class="rd-art-window"></span><span class="rd-art-leaf"></span><span class="rd-art-line"></span><span class="rd-art-caption">MAKE ROOM<br>FOR CURIOSITY.</span></div></div>
-    <div class="rd-section-header"><h2>我的书签 <span class="rd-count">03</span></h2><button class="rd-add" data-action="add"><i data-lucide="plus"></i>收藏文章</button></div>
-    <div class="rd-filters"><button class="rd-active" data-filter="all">全部收藏</button><button data-filter="design">设计灵感</button><button data-filter="technology">技术观察</button><button data-filter="life">生活方式</button><span></span><button data-filter="saved" aria-label="仅查看待读文章"><i data-lucide="bookmark"></i>待读</button></div>
-    <div class="rd-grid">
-      <article class="rd-article" data-category="design"><div class="rd-cover rd-cover-one"><span></span><b>Less,<br>but better.</b></div><div class="rd-card-body"><div class="rd-card-meta"><span>设计灵感</span><button data-action="bookmark" aria-label="标记为待读" aria-pressed="false"><i data-lucide="bookmark"></i></button></div><h3>好的设计，懂得留白</h3><p>在信息过载的时代，找回简单的力量。</p><footer><span>Kinfolk</span><span>6 分钟阅读 <i data-lucide="arrow-up-right"></i></span></footer></div></article>
-      <article class="rd-article" data-category="technology"><div class="rd-cover rd-cover-two"><span class="rd-orbit"></span><span class="rd-sphere"></span><b>Human × AI</b></div><div class="rd-card-body"><div class="rd-card-meta"><span>技术观察</span><button data-action="bookmark" aria-label="标记为待读" aria-pressed="false"><i data-lucide="bookmark"></i></button></div><h3>把工具变成创作伙伴</h3><p>人与 AI 协作的下一种可能。</p><footer><span>沿途思考</span><span>8 分钟阅读 <i data-lucide="arrow-up-right"></i></span></footer></div></article>
-      <article class="rd-article" data-category="life"><div class="rd-cover rd-cover-three"><span></span><b>A slower<br>kind of day.</b></div><div class="rd-card-body"><div class="rd-card-meta"><span>生活方式</span><button data-action="bookmark" aria-label="标记为待读" aria-pressed="false"><i data-lucide="bookmark"></i></button></div><h3>给生活一点慢下来的空间</h3><p>从每天十分钟的阅读开始。</p><footer><span>慢读来信</span><span>4 分钟阅读 <i data-lucide="arrow-up-right"></i></span></footer></div></article>
-    </div><p class="rd-empty" hidden>这里还是空的，先把喜欢的文章标记为待读吧。</p><div class="rd-bottom">少一些稍后再说，多一些此刻的好奇。<span>MADE WITH INTENTION ↗</span></div></div>
-  </div>
-</template>
-<style>
 #forma-design{color-scheme:light dark}
 #forma-design .fm-product{--fm-bg:light-dark(#f5f4f0,#1b1d1b);--fm-panel:light-dark(#fffefa,#252724);--fm-text:light-dark(#282c29,#eeeee8);--fm-muted:light-dark(#777d75,#a4aaa1);--fm-line:light-dark(#e4e5de,#3a3f37);--fm-soft:light-dark(#eeefe8,#30352d);--fm-accent:light-dark(#c35d36,#e7a079);--fm-onaccent:light-dark(#fffaf2,#29251f);--fm-green:light-dark(#43624e,#a3c7a5);font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.6;color:var(--fm-text);background:var(--fm-bg);border:1px solid var(--fm-line);border-radius:14px;overflow:hidden;position:relative;min-height:706px;box-sizing:border-box}
 #forma-design *,#forma-design *:before,#forma-design *:after{box-sizing:border-box}
@@ -245,16 +189,3 @@ try{document.documentElement.dataset.theme=localStorage.getItem('forma-theme')||
 @media(max-width:800px){#forma-design .fm-workspace{grid-template-columns:250px minmax(0,1fr)}#forma-design .fm-canvas{padding:10px}#forma-design .fm-address{display:none}#forma-design .fm-canvas-toolbar{justify-content:space-between}#forma-design .fm-focus-canvas{padding:0 35px}#forma-design .fm-prototype{display:none}}
 @media(max-width:600px){#forma-design .fm-product{min-height:706px}#forma-design .fm-header{padding:0 14px;gap:9px}#forma-design .fm-header .fm-brand{font-size:22px}#forma-design .fm-header .fm-quiet{font-size:0;gap:0}#forma-design .fm-primary{font-size:10px;padding:7px 9px}#forma-design .fm-projectbar{padding:0 16px;height:76px}#forma-design .fm-project-name{font-size:12px}#forma-design .fm-project-name small{font-size:9px}#forma-design .fm-project-actions{gap:3px}#forma-design .fm-project-actions .fm-quiet{font-size:0;gap:0}#forma-design .fm-project-actions .fm-iconbutton{display:none}#forma-design .fm-workspace{display:flex;flex-direction:column-reverse;margin:0 8px 8px}#forma-design .fm-canvas{padding:9px}#forma-design .fm-canvas-footer{display:none}#forma-design .fm-conversation{border:0;border-top:1px solid var(--fm-line)}#forma-design .fm-thread{padding:12px 15px}#forma-design .fm-user-message,#forma-design .fm-agent-title,#forma-design .fm-response,#forma-design .fm-process,#forma-design .fm-version-card{display:none}#forma-design .fm-suggestions{padding-top:9px}#forma-design .fm-conversation-top{padding:9px 15px}#forma-design .fm-input-note{display:none}#forma-design .fm-focus-canvas{padding:0 12px}#forma-design .fm-focus .rd-nav{margin:0 16px}#forma-design .fm-focus .rd-content{padding:0 16px}#forma-design .fm-focus-meta{padding:12px}#forma-design .fm-focus-meta>.fm-quiet{font-size:10px}#forma-design .fm-focus .fm-project-button{font-size:10px}#forma-design .fm-focus .fm-header>.fm-primary{font-size:0;gap:0}#forma-design .fm-focus .rd-intro h1{font-size:29px}#forma-design .fm-focus-ready>.fm-quiet{font-size:9px}#forma-design .fm-focus-bottom .fm-composer>div>span{display:none}#forma-design .fm-modal{padding:24px}#forma-design .fm-modal h2{font-size:21px}#forma-design .fm-focus .rd-article p{font-size:8px}}
 @media(prefers-reduced-motion:reduce){#forma-design *{transition:none!important}}
-</style>
-<link rel="stylesheet" href="assets/codemirror/codemirror.css">
-<link rel="stylesheet" href="workbench-files.css">
-
-<link rel="stylesheet" href="workbench-design.css">
-
-<link rel="stylesheet" href="workbench-review.css">
-<link rel="stylesheet" href="workbench-server.css">
-<link rel="stylesheet" href="task-capacity.css"><script src="backend-client.js"></script>
-<link rel="stylesheet" href="model-connection.css"><script src="model-connection.js"></script><link rel="stylesheet" href="model-picker.css"><script src="model-picker.js"></script>
-<link rel="stylesheet" href="skills.css"><script src="skills.js"></script>
-<script src="workbench-server.js"></script>
-<script src="workbench-motion.js"></script><script src="assets/codemirror/codemirror.js"></script><script src="assets/codemirror/javascript.js"></script><script src="assets/codemirror/css.js"></script><script src="assets/codemirror/xml.js"></script><script src="assets/codemirror/jsx.js"></script><script src="assets/codemirror/htmlmixed.js"></script><script src="assets/codemirror/markdown.js"></script><script src="assets/codemirror/searchcursor.js"></script><script src="workbench-files.js"></script><script src="dev-inspector.js"></script></body></html>

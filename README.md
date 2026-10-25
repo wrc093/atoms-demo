@@ -4,10 +4,10 @@
 
 ## 启动
 
-需要 Python 3.11+、Node.js 18+（仅用于 JavaScript 语法检查，不执行生成的程序）。Python 后端没有第三方包依赖，也不需要 npm install。
+需要 Python 3.11+、Node.js 18+（仅用于 JavaScript 语法检查，不执行生成的程序）。运行无需安装额外的 Python 或 npm 包；HTML 校验依赖随源码放在 `backend/vendor/`，保留了许可证。
 
 ```bash
-python3 server.py
+python3 -m backend
 ```
 
 访问 http://127.0.0.1:8770/ 。请使用此入口启动，旧的 `python3 -m http.server` 只会提供静态文件，无法使用后端。
@@ -19,6 +19,46 @@ python3 server.py
 旧访客 Cookie 不能继续访问工作空间。当前浏览器注册时会升级旧访客账号并保留项目；登录已有账号时，会把当前旧访客会话所属项目归入该账号。项目文件、版本和运行数据不删除。不同账号的项目相互隔离。
 
 旧前端原型的 localStorage / IndexedDB 数据没有删除，也不会自动冒充服务端项目导入。现在 localStorage 只用于外观与编辑器标签偏好。
+
+## 工程目录与开发命令
+
+```text
+frontend/                 前端工程（页面、共享组件、资源、开发脚本和测试）
+  index.html              产品流程入口
+  workbench.html          工作台入口
+  src/app/                路由、基础样式和主题
+  src/pages/              首页、方案、构建进度、工作台
+  src/components/         模型连接、选择器、Skill、并发提示
+  src/api/                API 客户端
+  src/shared/             共享动效
+  src/devtools/           元素定位等开发工具
+  assets/                 字体、第三方浏览器库、Skill 模板
+  scripts/                本机开发、静态发布、语法检查
+  tests/                  前端回归测试
+backend/                  Python API、业务、存储、生成与源码校验
+  __main__.py             python3 -m backend 入口
+  server.py               HTTP/API、鉴权与可选静态托管
+  tests/                  后端集成与安全测试
+  vendor/                 HTML 校验依赖及许可证
+deploy/                 Nginx 部署配置
+docs/                   架构说明
+.data/                    本机运行数据（不提交）
+```
+
+根目录只保留项目说明、协作约定、配置模板和 `Makefile`。更详细的职责和部署边界见 [架构说明](docs/architecture.md)。
+
+默认 `make dev` 或 `python3 -m backend` 启动同源开发环境。前端与 API 也可以分别运行：
+
+```bash
+# 终端 1：只启动 API，默认 8770
+make backend
+# 终端 2：独立前端，默认 5173；/api 代理到 8770
+make frontend
+```
+
+打开 http://127.0.0.1:5173/ 。前端通过 `/api` 交互，Cookie 和 CSRF 校验维持同源行为，开发代理仅监听本机。独立前端命令不读取后端 `.env`；可通过进程环境变量 `FORMA_FRONTEND_PORT`、`FORMA_API_ORIGIN` 修改端口。
+
+`make build` 输出 `frontend/dist/`，只包含两份 HTML、`src/` 和 `assets/`，不包含后端、测试、开发脚本、数据库和凭据。当前使用原生 HTML/CSS/JS，不需要转译；发布命令负责准备完整的静态发布目录。`make check` 检查前端语法，`make test` 运行前后端测试。
 
 ## 使用自己的 API Key
 
@@ -65,7 +105,7 @@ Key 不会出现在 API 响应、浏览器存储、日志或源码导出中。`.
 
 项目列表侧栏「我的 Skill」管理个人方法库；方案页「配置 Skill」以及工作台「更多项目操作 → Skill 扩展」选择这个项目要使用的方法。支持一个主导 Skill 统筹整体创作，再分别为视觉风格、应用架构、功能与交互、质量检查选择局部 Skill。所有插入点默认留空；配置不会限制用户的应用类型，也不会代替本次明确需求。
 
-可上传 UTF-8 Markdown（包括常见的 `SKILL.md` + YAML frontmatter），或包含一个 `SKILL.md` 入口及参考文件的 ZIP 包。支持单层包装目录，保留相对路径、未知元数据和文本参考资料；可查看包内文件、搜索、下载包、移出库以及重新导入。上传相同内容会复用已有记录，更新后的内容生成独立指纹，不会覆盖运行中任务的快照。页面提供可下载的 [Skill 模板](assets/skills/SKILL.md)。
+可上传 UTF-8 Markdown（包括常见的 `SKILL.md` + YAML frontmatter），或包含一个 `SKILL.md` 入口及参考文件的 ZIP 包。支持单层包装目录，保留相对路径、未知元数据和文本参考资料；可查看包内文件、搜索、下载包、移出库以及重新导入。上传相同内容会复用已有记录，更新后的内容生成独立指纹，不会覆盖运行中任务的快照。页面提供可下载的 [Skill 模板](frontend/assets/skills/SKILL.md)。
 
 当前接入的是**指令与参考资料层**：选中的入口正文、文本参考文件、插入点范围、版本与 SHA-256 指纹进入统一模型上下文，平台模型和 BYOK 的所有已支持协议共用。主导 Skill 提供整体方法，局部 Skill 只在对应领域细化它。优先级为平台运行约束 → 本次明确需求 → 对应局部 Skill → 主导 Skill → 默认习惯。包里的 `allowed-tools` 等未知元数据原样保留，不代表授权执行工具；脚本与二进制附件保留供下载，不执行、不读取远程引用、不直接导入生成页面。真正的工具/脚本执行器是独立的后续扩展，当前不会声称已执行。
 
@@ -85,7 +125,7 @@ Key 不会出现在 API 响应、浏览器存储、日志或源码导出中。`.
 6. 版本面板展示完整源码版本、实际文件前后内容及版本预览。恢复旧源码会新增版本，不覆盖历史。
 7. 文件页支持文件/文件夹选择、拖放上传、目录浏览、查看和下载。文件持久化到 SQLite，不依赖浏览器 IndexedDB。
 
-基础示例是无模型调用的真实代码构建，明确标注为 `starter`。内部根据描述选择已有阅读、待办或作品集示例，示例对话修改仅支持改名与配色切换；自由需求应使用平台模型或自己的 Key，不会静默降级为假生成。模型收到的方案仅包含名称和需求，不包含预设类型、能力清单或配色限制；重新按方案构建从需求出发，对话修改则提供现有源码以保留功能和数据。
+基础示例是无模型调用的真实代码构建，明确标注为 `starter`。内部根据描述选择已有阅读、待办或作品集示例，示例对话修改仅支持改名与配色切换；自由需求应使用平台模型或自己的 Key，不会静默降级为假生成。模型收到的方案仅包含名称和需求，不包含预设类型、能力清单或配色限制；首次构建从需求出发；已有项目保存方案后返回工作台，对话修改提供现有源码以保留功能和数据，不自动重发原需求。
 
 生成范围为无需安装依赖的 HTML / CSS / JavaScript 小应用。模型拿到本项目需求和当前源码，返回完整文件集；不会自动发送上传的参考资料。服务端检查文件路径、HTML 入口、项目内资源引用和 JS 语法；若模型源码未通过校验，最多再请求一次修复，然后才保存版本。
 
@@ -116,16 +156,17 @@ Key 不会出现在 API 响应、浏览器存储、日志或源码导出中。`.
 
 ## 代码入口
 
-- `server.py`：同源 HTTP/API 入口、会话 Cookie、请求校验、静态文件白名单和导出。
-- `backend/core.py`：SQLite、认证、项目/文件/版本、任务队列、兼容模型调用。
+- `backend/server.py`：同源 HTTP/API 入口、会话 Cookie、请求校验、前端目录白名单和导出。
+- `backend/core.py`：SQLite、认证、项目/文件/版本、任务队列与模型调用。
 - `backend/compiler.py`：源码校验、静态资源合并、预览隔离与运行数据桥。
-- `backend/templates.py`：可交互的离线模板。
-- `backend/skills.py`：Skill 包格式、个人库、插入点注册、权限校验与生成快照。
-- `skills.js`、`skills.css`：个人库与项目插入点的共享配置界面。
 - `backend/model_adapters.py`：服务目录、5 种协议的请求/认证与响应适配。
-- `backend-client.js`：前端 API 与会话初始化。
-- `app.js`、`plan.js`、`build-client.js`：多页产品流程、方案草稿、真实任务进度。
-- `workbench-server.js`、`workbench-files.js`：运行预览、对话生成、源码版本、CodeMirror 与服务器文件。
+- `backend/skills.py`：Skill 包格式、个人库、插入点注册、权限校验与生成快照。
+- `backend/templates.py`：可交互的离线模板。
+- `frontend/src/app/router.js`：产品路由、账号页与项目空间。
+- `frontend/src/api/client.js`：前端 API 与会话初始化。
+- `frontend/src/pages/plan/`、`frontend/src/pages/build/`：方案草稿与真实任务进度。
+- `frontend/src/pages/workbench/`：运行预览、对话生成、源码版本、CodeMirror 与项目文件。
+- `frontend/src/components/`：跨页面共享的模型连接、选择器和 Skill 配置界面。
 
 主要接口均为同源 JSON，写请求要求 `X-Forma-Request: 1`，并检查 Origin。所有项目接口检查所属账号。
 
@@ -151,7 +192,7 @@ Key 不会出现在 API 响应、浏览器存储、日志或源码导出中。`.
 安全加固、受控攻击结果、资源配额和上线防护见 [SECURITY.md](SECURITY.md)，HTTPS 反代模板见 [deploy/nginx.conf.example](deploy/nginx.conf.example)。应用代码不能独立防住带宽层 DDoS；公开部署仍需 CDN/WAF、源站防火墙与费用硬额度。
 
 ```bash
-python3 -m unittest discover -s tests -v
+make test
 ```
 
 测试使用临时数据库和本机模型替身，不读取真实 Key、不产生模型费用。覆盖强制登录、会话轮换、旧访客注册迁移、账号隔离、CSRF/静态私有文件保护、路径校验、文件冲突、坏源码保留成功预览、版本恢复与独立运行数据、二进制上传/导出、数据库重开、重启中断、任务取消与重复生成、模型校验后修复、隔离预览。

@@ -13,7 +13,7 @@ function setup({localVersion=1,serverVersion=1,connected=false}={}){
   const context={document:{addEventListener:(type,handler)=>handlers[type]=handler},window:{addEventListener:()=>{}},projects:[project],clearTimeout,structuredClone,
     FormaAPI:{settings:{userModel:{ready:connected}},request:async(url,method,data)=>{requests.push({url,method,data});return url.endsWith('/generate')?{job:{id:'job_test'}}:{project:{currentVersion:serverVersion}};}},
     FormaModel:{open:async()=>{keyPrompts++;return false;}},navigate:route=>routes.push(route),toast:()=>{}};
-  vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(__dirname,'../plan.js'),'utf8'),context);
+  vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(__dirname,'../src/pages/plan/plan.js'),'utf8'),context);
   context.readPlanForm=()=>brief;context.persistPlan=async project=>saved.push(structuredClone(project.plan));
   return {requests,saved,routes,button,brief,keyPrompts:()=>keyPrompts,submit:()=>handlers.submit({target:form,preventDefault(){}})};
 }

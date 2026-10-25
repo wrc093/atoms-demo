@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run with python3 server.py. Python 3.11+, no Python package installation."""
+"""Run with python3 -m backend. Python 3.11+, no Python package installation."""
 import io
 import ipaddress
 import json
@@ -22,11 +22,12 @@ from backend.security import RateLimiter
 from backend.model_adapters import catalog, protocol_name
 from backend.skills import SkillError
 
-ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+FRONTEND_ROOT = PROJECT_ROOT / "frontend"
 
 
 def load_env():
-    path = ROOT / ".env"
+    path = PROJECT_ROOT / ".env"
     if path.exists():
         for line in path.read_text().splitlines():
             line = line.strip()
@@ -62,8 +63,9 @@ class Server(ThreadingHTTPServer):
     daemon_threads = True
     request_queue_size = 32
 
-    def __init__(self, address, workspace, public_url="", *, max_connections=48, per_ip_connections=16, read_timeout=8, request_timeout=30, trusted_proxies=()):
+    def __init__(self, address, workspace, public_url="", *, max_connections=48, per_ip_connections=16, read_timeout=8, request_timeout=30, trusted_proxies=(), serve_frontend=True):
         self.workspace, self.public_url = workspace, public_url.rstrip("/")
+        self.serve_frontend = serve_frontend
         self.max_connections, self.per_ip_connections = max_connections, per_ip_connections
         self.read_timeout, self.request_timeout = read_timeout, request_timeout
         self.connection_lock = threading.Lock()
@@ -334,11 +336,12 @@ class Handler(BaseHTTPRequestHandler):
         raise APIError(404,"接口不存在")
 
     def static(self, parts):
+        if not self.server.serve_frontend:raise APIError(404,"此服务只提供 API")
         if not parts:parts=["index.html"]
         relative=Path(*parts)
-        target=(ROOT/relative).resolve()
-        if not target.is_relative_to(ROOT) or any(part.startswith(".") or part in ("backend","tests","preview") for part in parts):raise APIError(404,"文件不存在")
-        allowed=(len(parts)==1 and target.suffix in (".html",".css",".js")) or (parts[0]=="assets")
+        target=(FRONTEND_ROOT/relative).resolve()
+        if not target.is_relative_to(FRONTEND_ROOT.resolve()) or any(part.startswith(".") for part in parts):raise APIError(404,"文件不存在")
+        allowed=parts in (["index.html"],["workbench.html"]) or (parts[0]=="src" and target.suffix in (".css",".js")) or parts[0]=="assets"
         if not allowed or not target.is_file():raise APIError(404,"文件不存在")
         if parts==["workbench.html"]:
             user=self.ws.session(self.cookie_token())
@@ -377,12 +380,12 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     load_env()
     host=os.environ.get("FORMA_HOST","127.0.0.1");port=int(os.environ.get("FORMA_PORT","8770"))
-    database=Path(os.environ.get("FORMA_DB",str(ROOT/".data/forma.sqlite3"))).expanduser()
-    if not database.is_absolute():database=ROOT/database
+    database=Path(os.environ.get("FORMA_DB",str(PROJECT_ROOT/".data/forma.sqlite3"))).expanduser()
+    if not database.is_absolute():database=PROJECT_ROOT/database
     database.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
     workspace=Workspace(database,model_config());database.chmod(0o600)
     proxies=tuple(value.strip() for value in os.environ.get('FORMA_TRUSTED_PROXIES','').split(',') if value.strip())
-    server=Server((host,port),workspace,os.environ.get("FORMA_PUBLIC_URL",""),trusted_proxies=proxies)
+    server=Server((host,port),workspace,os.environ.get("FORMA_PUBLIC_URL",""),trusted_proxies=proxies,serve_frontend=os.environ.get("FORMA_SERVE_FRONTEND","1")!="0")
     print(f'Forma ready: http://{host}:{server.server_port}',flush=True)
     print('Model configured: '+str(workspace.model_ready()),flush=True)
     try:server.serve_forever()

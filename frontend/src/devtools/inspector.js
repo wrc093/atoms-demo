@@ -4,7 +4,7 @@
   const host = document.createElement('div');
   host.id = 'forma-dev-inspector';
   const shadow = host.attachShadow({mode:'open'});
-  shadow.innerHTML = `<link rel="stylesheet" href="dev-inspector.css">
+  shadow.innerHTML = `<link rel="stylesheet" href="/src/devtools/inspector.css">
     <div class="highlight" hidden></div>
     <div class="tooltip" hidden aria-hidden="true"><div class="tag"></div><strong class="identity"></strong><code class="selector"></code><small class="geometry"></small></div>
     <aside class="dock" aria-label="前端开发者工具">

@@ -13,7 +13,7 @@ from unittest.mock import patch
 from backend.core import APIError, Workspace
 from backend.compiler import compile_preview
 from backend.security import RateLimiter
-from server import Server
+from backend.server import Server
 
 
 class AdmissionTest(unittest.TestCase):

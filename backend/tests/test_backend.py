@@ -17,7 +17,7 @@ from unittest.mock import patch
 from backend.compiler import BuildError, compile_preview, validate
 from backend.core import Workspace, now
 from backend.templates import starter
-from server import Handler, Server
+from backend.server import Handler, Server
 
 Handler.log_message=lambda *args:None
 

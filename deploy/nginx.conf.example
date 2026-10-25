@@ -1,10 +1,15 @@
 # Example standalone nginx.conf. Replace forma.example.com and certificate paths.
-# Validate with nginx -t before use. Keep Python bound to 127.0.0.1:8770.
+# Run make build; publish frontend/dist to /srv/forma/frontend/dist.
+# Validate with nginx -t before use. Run Python API-only on 127.0.0.1:8770.
 worker_processes auto;
 events { worker_connections 1024; }
 http {
     include mime.types;
     server_tokens off;
+    map $uri $forma_frame_sources {
+        default "'self'";
+        /workbench.html "blob:";
+    }
     # Limit state is shared by nginx workers; Python limits are single-process.
     limit_conn_zone $binary_remote_addr zone=connections:10m;
     limit_req_zone $binary_remote_addr zone=api:10m rate=20r/s;
@@ -74,6 +79,19 @@ http {
             limit_req zone=api burst=40 nodelay;
             proxy_pass http://127.0.0.1:8770;
         }
-        location / { proxy_pass http://127.0.0.1:8770; }
+        # Only the built frontend is public; backend/.env/.data are outside root.
+        root /srv/forma/frontend/dist;
+        index index.html;
+        location ~ /\. { return 404; }
+        location / {
+            try_files $uri $uri/ =404;
+            add_header Cache-Control "no-store" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header Referrer-Policy "same-origin" always;
+            add_header X-Frame-Options "SAMEORIGIN" always;
+            add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+            add_header Strict-Transport-Security "max-age=31536000" always;
+            add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'self'; frame-src $forma_frame_sources; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'" always;
+        }
     }
 }

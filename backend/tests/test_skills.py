@@ -15,7 +15,7 @@ from unittest.mock import patch
 from backend import skills
 from backend.core import APIError, Workspace
 from backend.templates import starter
-from server import Server
+from backend.server import Server
 from test_backend import Client
 
 

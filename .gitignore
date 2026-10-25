@@ -9,3 +9,7 @@ __pycache__/
 .env.*
 !.env.example
 preview/
+
+# Frontend build output and optional tooling dependencies
+frontend/dist/
+node_modules/

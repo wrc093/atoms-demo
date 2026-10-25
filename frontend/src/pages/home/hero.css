@@ -1,5 +1,5 @@
 /* Display typography: optical balance rather than a second muted headline. */
-@font-face{font-family:'Forma Display';src:url('assets/forma-display.ttf') format('truetype');font-weight:500;font-style:normal;font-display:swap}
+@font-face{font-family:'Forma Display';src:url('../../../assets/fonts/forma-display.ttf') format('truetype');font-weight:500;font-style:normal;font-display:swap}
 .home-hero{padding-top:61px}
 .hero-copy{max-width:900px}
 .hero-copy>.hero-kicker{gap:13px;letter-spacing:2px;font-family:var(--sans);font-size:9px;color:var(--text-secondary);line-height:1.5}
