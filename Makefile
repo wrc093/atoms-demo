@@ -1,4 +1,4 @@
-.PHONY: dev backend frontend build check test
+.PHONY: dev backend frontend build check test service-plugin
 
 dev:
 	python3 -m backend
@@ -19,3 +19,6 @@ check:
 test:
 	python3 -m unittest discover -s backend/tests -v
 	npm --prefix frontend test
+
+service-plugin:
+	python3 deploy/service-base/build.py

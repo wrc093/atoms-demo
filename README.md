@@ -2,7 +2,7 @@
 
 保留简洁的多页前端，已接入真实后端：账号、项目、生成任务、源码、上传文件、版本和应用运行数据都保存在服务端。可以通过 DeepSeek 生成应用，继续对话修改，或在 CodeMirror 中编辑源码并更新预览。
 
-评审使用的实现思路、完成情况和后续安排见 [项目说明草稿](docs/submission-draft.md)。草稿中的公网演示地址仍待补充。
+实现思路、完成情况和后续安排见 [项目说明](docs/submission-draft.md)。[在线演示](https://forma.179-253-234-78.sslip.io:18443/)由本机 Service Base 插件托管，经私有 FRP 通道和 HTTPS 入口访问。
 
 ## 启动
 
@@ -42,8 +42,8 @@ backend/                  Python API、业务、存储、生成与源码校验
   server.py               HTTP/API、鉴权与可选静态托管
   tests/                  后端集成与安全测试
   vendor/                 HTML 校验依赖及许可证
-deploy/                 Nginx 部署配置
-docs/                   架构说明
+deploy/                   反向代理配置、Service Base 插件与打包脚本
+docs/                     项目说明与架构说明
 .data/                    本机运行数据（不提交）
 ```
 
@@ -61,6 +61,52 @@ make frontend
 打开 http://127.0.0.1:5173/ 。前端通过 `/api` 交互，Cookie 和 CSRF 校验维持同源行为，开发代理仅监听本机。独立前端命令不读取后端 `.env`；可通过进程环境变量 `FORMA_FRONTEND_PORT`、`FORMA_API_ORIGIN` 修改端口。
 
 `make build` 输出 `frontend/dist/`，只包含两份 HTML、`src/` 和 `assets/`，不包含后端、测试、开发脚本、数据库和凭据。当前使用原生 HTML/CSS/JS，不需要转译；发布命令负责准备完整的静态发布目录。`make check` 检查前端语法，`make test` 运行前后端测试。
+
+## 公网演示与 Service Base 托管
+
+在线演示：https://forma.179-253-234-78.sslip.io:18443/ 。GitHub 仓库已公开。访问后可以注册自己的账号；真实生成可使用平台模型或自己的 Key，无 Key 时可选择基础示例。
+
+当前路径是浏览器 → VPS 的 Caddy HTTPS 入口 → FRP STCP 私有通道 → 这台 Mac 上的应用。TLS 证书由 Caddy 自动申请和续期；FRP visitor 只监听 VPS 的回环地址，没有新增直接访问后端的公网端口。应用和数据继续保留在本机，现有 FRP 通道保持独立运行。
+
+本机应用作为 `forma-demo` 插件接入现有 Service Base，由基座负责登录后启动、心跳检查、故障重启和子进程回收。应用健康检查通过后才报告 ready，后台每 10 秒检查一次；FRP 子进程退出或应用持续不健康时，由基座重新拉起插件。关闭终端不影响服务；电脑关机、休眠或网络中断期间，公网 Demo 会暂时不可用。
+
+插件协议适配器和可复现的打包脚本位于 `deploy/service-base/`。打包只复制运行代码和前端文件；模型配置、数据库和隧道认证配置通过路径引用，不进入源码仓库或插件包。
+
+```bash
+# 使用本机已有数据和配置构建插件；基座本身需事先安装。
+python3 deploy/service-base/build.py \
+  --env-file "$PWD/.env" \
+  --database "$PWD/.data/forma.sqlite3" \
+  --public-url "https://你的公网域名" \
+  --frpc-binary "/绝对路径/frpc" \
+  --frpc-config "/私有配置目录/frpc.toml"
+
+# install 相同 ID 会更新该插件的快照，不重启基座或其他插件。
+~/.local/bin/service-base install "$PWD/build/service-base"
+~/.local/bin/service-base status
+~/.local/bin/service-base logs forma-demo
+~/.local/bin/service-base restart forma-demo
+```
+
+首次从手动启动迁移时，应先确认没有运行任务，备份 SQLite，再停止已确认的旧应用进程，避免两个实例争用同一端口。未配置 FRP 时，插件也能单独托管本地应用。安装后的配置更新使用基座的 `configure` 命令；代码改动后需要重新打包和 install，源码目录修改不会自动替换已安装快照。
+
+当前 VPS 的入口配置位于 `/opt/forma-edge/Caddyfile`，FRP visitor 私有配置位于 `/opt/forma-edge/visitor.toml`，分别由 `forma-edge` 和 `forma-frp-visitor` 两个 systemd 服务管理。HTTPS 使用 18443，80 用于证书签发，原有 443 服务保持独立。visitor 仅绑定 `127.0.0.1:18770`，通过 STCP 连接到本机的 8770；不要把 visitor 改成公网监听。本机隧道配置保存在 `.data/frp/frpc.toml`，随应用一起由插件管理。
+
+如果公网访问异常，先检查本机插件和 `/api/health`，再在 VPS 上检查入口与隧道：
+
+```bash
+curl --fail http://127.0.0.1:8770/api/health
+# 以下命令在 VPS 上执行
+systemctl status forma-edge forma-frp-visitor
+journalctl -u forma-edge -u forma-frp-visitor -n 100 --no-pager
+/opt/forma-edge/caddy validate --config /opt/forma-edge/Caddyfile --adapter caddyfile
+```
+
+备份运行中的 SQLite 时使用 SQLite backup API 或 `.backup`，不要只复制主数据库文件而漏掉 WAL。备份、环境文件和 FRP 密钥应存放在私有目录；当前尚未配置定期异地备份。
+
+公网域名需要通过 `FORMA_PUBLIC_URL` 配置，Cookie 才会带 Secure 标记。使用独立环境文件时可设置 `FORMA_ENV_FILE`。只有明确受信的边缘代理可以覆盖 `X-Real-IP`；隧道密钥、服务端 token 和证书私钥保存在各机器的私有配置目录，不写进 Git。平台模型的应用内任务额度已启用，费用硬上限和上游 DDoS 防护仍需结合服务商配置。
+
+仓库里的 `deploy/nginx.conf.example` 是另一种前后端静态分离部署的参考模板。本机当前实际使用 Caddy + FRP，Nginx 模板未在目标环境运行验证。
 
 ## 使用自己的 API Key
 
@@ -203,9 +249,9 @@ make test
 
 ## 当前取舍
 
-当前交付是可运行的本机单进程全栈 Demo，尚未在线部署。生产公开部署还需要 HTTPS 反向代理、服务进程管理、数据库备份与适合部署环境的凭据配置。`FORMA_PUBLIC_URL` 用于声明外部访问地址并启用 Secure Cookie。
+当前交付是可通过公网 HTTPS 访问的单机全栈 Demo，进程由 Service Base 管理。可用性仍依赖这台电脑和网络，尚未配置定期异地备份、持续监控及上游 DDoS 防护。`FORMA_PUBLIC_URL` 用于声明外部访问地址并启用 Secure Cookie。
 
-暂未实现邮箱验证、密码找回、团队协作、生成应用自身的任意服务端代码或 npm 工程构建。当前优先完成了生成—运行—修改—版本恢复的闭环。下一步优先是部署与可观测性，再考虑多种构建运行时。
+暂未实现邮箱验证、密码找回、团队协作、生成应用自身的任意服务端代码或 npm 工程构建。当前优先完成了生成—运行—修改—版本恢复的闭环。下一步优先补充可观测性和备份，再考虑多种构建运行时。
 
 界面继续支持浅/深色、响应式、减少动态效果设置。CodeMirror 5.65.16、Lucide 0.468.0 和展示字体均保存在 `assets/` 并附带相应许可证。
 

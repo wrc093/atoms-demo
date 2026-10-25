@@ -1,0 +1,10 @@
+{
+  "api_version": 1,
+  "id": "forma-demo",
+  "version": "1.0.0",
+  "command": ["{python}", "main.py"],
+  "ready_timeout": 30,
+  "heartbeat_timeout": 45,
+  "stop_timeout": 12,
+  "config": {"port": 8770, "env_file": "", "database": "", "public_url": "", "frpc_binary": "", "frpc_config": ""}
+}

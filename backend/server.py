@@ -27,7 +27,7 @@ FRONTEND_ROOT = PROJECT_ROOT / "frontend"
 
 
 def load_env():
-    path = PROJECT_ROOT / ".env"
+    path = Path(os.environ.get("FORMA_ENV_FILE",str(PROJECT_ROOT / ".env"))).expanduser()
     if path.exists():
         for line in path.read_text().splitlines():
             line = line.strip()

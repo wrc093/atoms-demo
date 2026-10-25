@@ -13,3 +13,6 @@ preview/
 # Frontend build output and optional tooling dependencies
 frontend/dist/
 node_modules/
+
+# Local Service Base package snapshots
+build/
