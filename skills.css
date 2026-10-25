@@ -11,3 +11,13 @@
 :root[data-theme=dark] .sk-dialog,:root[data-theme=dark] .sk-preview{--sk-paper:#20241f;--sk-panel:#272d26;--sk-ink:#e5ebdf;--sk-muted:#9ca995;--sk-line:#3d4939;--sk-soft:#30392c}:root[data-theme=dark] .sk-point-main{border-color:#586c4a}:root[data-theme=dark] .sk-card:hover{border-color:#708263}
 @media(max-width:750px){.sk-dialog{width:calc(100vw - 24px);max-height:94svh;border-radius:15px}.sk-head{padding:23px 21px 20px}.sk-head h2{font-size:24px}.sk-head p{font-size:11px}.sk-layout{grid-template-columns:1fr}.sk-insertion{padding:22px}.sk-library{border-left:0;border-top:1px solid var(--sk-line);padding:22px}.sk-library-items{max-height:310px;min-height:130px}.sk-foot{padding:15px 20px;gap:10px;align-items:flex-end}.sk-foot>div>small{font-size:8px;max-width:200px;line-height:1.7}.sk-foot>div>span{font-size:9px}.sk-foot>div:last-child{gap:5px}.sk-primary,.sk-secondary{font-size:10px;padding:9px 11px}.sk-local-points{gap:18px 14px}.sk-section-label>small{font-size:7px}.sk-preview>header{padding:20px}.sk-preview h2{font-size:20px}.sk-source{margin-inline:20px}.sk-preview>footer{padding:15px 20px;gap:10px;flex-wrap:wrap}.sk-preview footer>span{flex-basis:100%}.sk-library-intro{min-height:220px}.plan-skills-entry{flex-wrap:wrap}.plan-skills-entry>div{flex-basis:calc(100% - 50px)}.plan-skills-entry button{margin-left:39px}}
 @media(prefers-reduced-motion:reduce){.sk-dialog *{transition:none!important}.sk-card:hover{translate:none}}
+
+/* Skill choices share the model picker's panel and stay inside the modal's focus scope. */
+.model-picker-skill,.model-picker-menu-skill{--mp-ink:var(--sk-ink);--mp-muted:var(--sk-muted);--mp-line:var(--sk-line);--mp-panel:var(--sk-panel);--mp-soft:var(--sk-soft)}
+.sk-dialog .model-picker .mp-trigger,.sk-preview .model-picker .mp-trigger{font:inherit;font-size:11px;padding:10px 11px;border-radius:8px;line-height:1.5;min-height:38px;color:var(--sk-ink)}
+.sk-dialog .model-picker .mp-trigger>svg:first-child{width:13px;height:13px;color:var(--sk-muted)}
+.model-picker-menu-skill .mp-options{max-height:min(320px,46svh);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.model-picker-menu-skill .mp-option-copy strong{min-width:0;overflow-wrap:anywhere;flex-wrap:wrap}
+.model-picker-menu-skill .mp-option-copy>span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sk-file-select>.model-picker{flex:1;min-width:0}
+.model-picker-menu-skill{line-height:1.5}
