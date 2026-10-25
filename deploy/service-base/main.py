@@ -36,27 +36,31 @@ def run():
     if not 1024<=port<=65535:raise ValueError('Invalid application port')
     env={**os.environ,'FORMA_HOST':'127.0.0.1','FORMA_PORT':str(port),
          'FORMA_DB':str(config.get('database') or data/'forma.sqlite3'),
-         'FORMA_PUBLIC_URL':config.get('public_url','')}
+         'FORMA_PUBLIC_URL':config.get('public_url',''),'FORMA_ALLOW_LOCAL_ACCESS':'1'}
     if config.get('env_file'):env['FORMA_ENV_FILE']=str(Path(config['env_file']).expanduser())
     # The edge overwrites X-Real-IP; the FRP endpoint is local to this machine.
     if config.get('public_url'):env['FORMA_TRUSTED_PROXIES']='127.0.0.1/32'
     stopped=threading.Event()
     for name in (signal.SIGTERM,signal.SIGINT):signal.signal(name,lambda *_:stopped.set())
-    children=[]
+    children=[];tunnel_pid=None
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
     def healthy():
         try:
             with opener.open(f'http://127.0.0.1:{port}/api/health',timeout=2) as response:
-                return json.load(response).get('ok') is True
+                if json.load(response).get('ok') is not True:return False
+            request=urllib.request.Request(f'http://127.0.0.1:{port}/api/bootstrap',data=b'{}',headers={'Content-Type':'application/json','X-Forma-Request':'1'})
+            with opener.open(request,timeout=2) as response:return json.load(response).get('apiVersion')==1
         except (OSError,ValueError):return False
     def status(phase):
         temporary=data/'status.tmp'
         temporary.write_text(json.dumps({'phase':phase,'checked_at':time.time(),'port':port,
             'public_url':config.get('public_url',''),'app_pid':children[0].pid if children else None,
-            'tunnel_pid':children[1].pid if len(children)>1 else None}))
+            'tunnel_pid':tunnel_pid}))
         temporary.replace(data/'status.json')
     try:
-        with socket.socket() as probe:probe.bind(('127.0.0.1',port))
+        with socket.socket() as probe:
+            probe.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+            probe.bind(('127.0.0.1',port))
         # No shell or detached process group: Service Base owns the whole tree.
         children.append(start_child([sys.executable,'-m','backend'],cwd=app,env=env))
         deadline=time.monotonic()+20
@@ -68,8 +72,11 @@ def run():
             binary=Path(config['frpc_binary']).expanduser();tunnel=Path(config['frpc_config']).expanduser()
             if not binary.is_file() or not tunnel.is_file():raise ValueError('FRP runtime/config is unavailable')
             children.append(start_child([str(binary),'-c',str(tunnel)]))
+            tunnel_pid=children[-1].pid
             if stopped.wait(1):return
             if children[-1].poll() is not None:raise RuntimeError('FRP client failed to start')
+        if sys.platform=='darwin' and config.get('keep_awake',True) and shutil.which('caffeinate'):
+            children.append(start_child(['caffeinate','-i','-s','-w',str(children[0].pid)]))
         status('ready');emit('ready')
         failures=0
         while not stopped.wait(interval):

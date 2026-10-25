@@ -63,9 +63,10 @@ class Server(ThreadingHTTPServer):
     daemon_threads = True
     request_queue_size = 32
 
-    def __init__(self, address, workspace, public_url="", *, max_connections=48, per_ip_connections=16, read_timeout=8, request_timeout=30, trusted_proxies=(), serve_frontend=True):
+    def __init__(self, address, workspace, public_url="", *, max_connections=48, per_ip_connections=16, read_timeout=8, request_timeout=30, trusted_proxies=(), serve_frontend=True, allow_local_access=False):
         self.workspace, self.public_url = workspace, public_url.rstrip("/")
         self.serve_frontend = serve_frontend
+        self.allow_local_access = allow_local_access
         self.max_connections, self.per_ip_connections = max_connections, per_ip_connections
         self.read_timeout, self.request_timeout = read_timeout, request_timeout
         self.connection_lock = threading.Lock()
@@ -144,12 +145,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def client_ip(self):
         ip=self.client_address[0]
+        if self.direct_local_request():return ip
         if self.server.is_trusted_proxy(ip):
             values=self.headers.get_all('X-Real-IP', [])
             if len(values)!=1:raise APIError(400,'代理客户端地址无效')
             try:ip=str(ipaddress.ip_address(values[0]))
             except ValueError:raise APIError(400,'代理客户端地址无效')
         return ip
+
+    def direct_local_request(self):
+        # Explicit support for the owner's loopback browser alongside a proxy.
+        # The public vhost still requires the edge's single validated X-Real-IP.
+        if not self.server.allow_local_access or self.headers.get_all('X-Real-IP'):return False
+        if not ipaddress.ip_address(self.client_address[0]).is_loopback:return False
+        try:return urlsplit('//'+self.headers.get('Host','')).hostname in ('127.0.0.1','localhost','::1')
+        except ValueError:return False
 
     def cookie_token(self):
         cookie = SimpleCookie()
@@ -158,7 +168,7 @@ class Handler(BaseHTTPRequestHandler):
         return cookie["forma_session"].value if "forma_session" in cookie else None
 
     def session_cookie(self, token, clear=False):
-        secure = "; Secure" if self.server.public_url.startswith("https:") else ""
+        secure = "; Secure" if self.server.public_url.startswith("https:") and not self.direct_local_request() else ""
         return f'forma_session={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={0 if clear else 2592000}{secure}'
 
     def send(self, status, body, mime="application/json; charset=utf-8", headers=None):
@@ -258,7 +268,7 @@ class Handler(BaseHTTPRequestHandler):
         owner=user["id"]
         if not self.server.limiter.allow(('user',owner),20,80):raise APIError(429,"请求过于频繁，请稍后重试")
         large=method=='GET' and (parts[-1] in ('files','versions','preview','export') or len(parts)==3 and parts[:2] in (['api','projects'],['api','skills'])) or method=='PUT' and parts[-1]=='files' or parts==['api','skills'] and method=='POST'
-        expensive=(method=='GET' and parts[-1] in ('files','versions','preview','export')) or parts[-1] in ('generate','resume','build','restore') or parts==['api','model-connection'] and method=='PUT' or parts==['api','skills'] and method=='POST'
+        expensive=(method=='GET' and parts[-1] in ('files','versions','preview','export')) or parts[-1] in ('generate','resume','build','restore') or parts[-1]=='suggestions' and method=='POST' or parts==['api','model-connection'] and method=='PUT' or parts==['api','skills'] and method=='POST'
         if expensive and (not self.server.limiter.allow(('expensive',owner),.5,8) or not self.server.limiter.allow(('expensive-all',),4,16)):
             raise APIError(429,"构建或预览请求过于频繁，请稍后重试")
         if large:
@@ -294,6 +304,11 @@ class Handler(BaseHTTPRequestHandler):
                 data=self.body()
                 return self.send(200,{"version":self.ws.build_saved(owner,project_id,data.get("sourceRevision"))})
             if tail==["generate"] and method=="POST":return self.send(202,{"job":self.ws.enqueue(owner,project_id,self.body())})
+            if tail==['suggestions']:
+                if method=='GET':return self.send(200,self.ws.get_suggestions(owner,project_id))
+                if method=='POST':
+                    result=self.ws.start_suggestions(owner,project_id,self.body())
+                    return self.send(202 if result['status']=='pending' else 200,result)
             if tail==["restore"] and method=="POST":
                 number=self.body().get("version")
                 if type(number)!=int or number<1:raise APIError(400,"版本号无效")
@@ -385,7 +400,7 @@ def main():
     database.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
     workspace=Workspace(database,model_config());database.chmod(0o600)
     proxies=tuple(value.strip() for value in os.environ.get('FORMA_TRUSTED_PROXIES','').split(',') if value.strip())
-    server=Server((host,port),workspace,os.environ.get("FORMA_PUBLIC_URL",""),trusted_proxies=proxies,serve_frontend=os.environ.get("FORMA_SERVE_FRONTEND","1")!="0")
+    server=Server((host,port),workspace,os.environ.get("FORMA_PUBLIC_URL",""),trusted_proxies=proxies,serve_frontend=os.environ.get("FORMA_SERVE_FRONTEND","1")!="0",allow_local_access=os.environ.get('FORMA_ALLOW_LOCAL_ACCESS')=='1')
     print(f'Forma ready: http://{host}:{server.server_port}',flush=True)
     print('Model configured: '+str(workspace.model_ready()),flush=True)
     try:server.serve_forever()

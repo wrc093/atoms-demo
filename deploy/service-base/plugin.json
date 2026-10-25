@@ -6,5 +6,5 @@
   "ready_timeout": 30,
   "heartbeat_timeout": 45,
   "stop_timeout": 12,
-  "config": {"port": 8770, "env_file": "", "database": "", "public_url": "", "frpc_binary": "", "frpc_config": ""}
+  "config": {"port": 8770, "env_file": "", "database": "", "public_url": "", "frpc_binary": "", "frpc_config": "", "keep_awake": true}
 }

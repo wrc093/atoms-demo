@@ -154,6 +154,23 @@ class SecurityTest(unittest.TestCase):
             for _ in range(2):self.server.response_slots.release()
         self.assertEqual(self.request('/api/projects/'+self.project+'/files')[0],200)
 
+    def test_opted_in_loopback_access_coexists_with_strict_public_proxy_and_secure_cookies(self):
+        self.server.trusted_proxies=(ipaddress.ip_network('127.0.0.1/32'),)
+        self.server.public_url='https://public.example.invalid'
+        self.server.allow_local_access=True
+        self.assertEqual(self.request('/api/bootstrap','POST',{})[0],200)
+        credentials={'email':'safe@example.invalid','password':'Test-password-92'}
+        local=self.request('/api/auth/login','POST',credentials)
+        self.assertEqual(local[0],200);self.assertNotIn('; Secure',local[2]['Set-Cookie'])
+        public={'Host':'public.example.invalid','Origin':'https://public.example.invalid'}
+        self.assertEqual(self.request('/api/bootstrap','POST',{},public)[0],400)
+        self.assertEqual(self.request('/api/bootstrap','POST',{}, {'X-Real-IP':'invalid'})[0],400)
+        public['X-Real-IP']='203.0.113.1'
+        remote=self.request('/api/auth/login','POST',credentials,public)
+        self.assertEqual(remote[0],200);self.assertIn('; Secure',remote[2]['Set-Cookie'])
+        self.server.allow_local_access=False
+        self.assertEqual(self.request('/api/bootstrap','POST',{})[0],400)
+
     def test_runtime_placeholders_and_script_markup_remain_literal_data(self):
         value='TOKEN READONLY __FORMA_TOKEN__ __FORMA_READONLY__ </script>'
         preview=compile_preview([{'path':'index.html','text':'<main>safe</main>'}],{'a':value},'synthetic-preview-token')

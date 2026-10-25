@@ -40,7 +40,7 @@
             <button class="fm-version-card" data-action="current"><span class="fm-version-thumb"><i data-lucide="layout-template"></i></span><span>拾光 · 初始版本<small>版本 1 <span>·</span> 预览已就绪</small></span><i data-lucide="arrow-up-right"></i></button>
             <div class="fm-followup" aria-live="polite"></div>
           </div>
-          <div class="fm-composer-area"><div class="fm-suggestions"><button data-action="warm">换成暖橙色调 <i data-lucide="plus"></i></button><button data-action="rename">更换应用名称 <i data-lucide="plus"></i></button></div><form class="fm-composer"><textarea rows="2" aria-label="描述你想修改的内容" placeholder="继续打磨你的想法…"></textarea><div><span><i data-lucide="sparkles"></i> 构建模式</span><button type="submit" aria-label="提交修改"><i data-lucide="arrow-up"></i></button></div></form><span class="fm-input-note">描述你想要的改变，画布会随之更新</span></div>
+          <div class="fm-composer-area"><div class="fm-suggestions" aria-label="项目优化建议" hidden></div><form class="fm-composer"><textarea rows="2" aria-label="描述你想修改的内容" placeholder="继续打磨你的想法…"></textarea><div><span><i data-lucide="sparkles"></i> 构建模式</span><button type="submit" aria-label="提交修改"><i data-lucide="arrow-up"></i></button></div></form><span class="fm-input-note">描述你想要的改变，画布会随之更新</span></div>
         </aside>
         <section class="fm-canvas-zone"><div class="fm-canvas-toolbar"><div class="fm-view-tabs"><button class="fm-selected" data-action="preview"><i data-lucide="app-window"></i>预览</button><button data-action="files"><i data-lucide="code-2"></i>文件</button></div><span class="fm-address"><span></span>shiguang.forma.app</span><div class="fm-device"><button class="fm-selected" data-action="desktop" aria-label="桌面预览"><i data-lucide="monitor"></i></button><button data-action="mobile" aria-label="手机预览"><i data-lucide="smartphone"></i></button></div></div><div class="fm-canvas"><div class="fm-preview-target"></div><div class="fm-files" hidden><div><i data-lucide="folder-open"></i> 拾光 / src</div><pre>src/
   App.tsx
@@ -76,6 +76,7 @@
   <script src="src/components/model-connection/connection.js"></script>
   <script src="src/components/choice-picker/picker.js"></script>
   <script src="src/components/skills/skills.js"></script>
+  <script src="src/components/project-suggestions/suggestions.js"></script>
   <script src="src/pages/workbench/workspace.js"></script>
   <script src="src/pages/workbench/motion.js"></script>
   <script src="assets/vendor/codemirror/codemirror.js"></script>

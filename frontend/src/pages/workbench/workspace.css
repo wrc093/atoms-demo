@@ -84,3 +84,16 @@
 #forma-design .fm-composer>div{gap:12px;margin-top:10px}
 #forma-design .fm-composer textarea{resize:none;min-height:68px}
 #forma-design .fm-composer [type=submit]{flex-shrink:0;width:30px;height:30px;border-radius:9px}
+
+/* Optional next directions, specific to the saved version. */
+#forma-design .fm-suggestions{display:grid;gap:6px;padding-bottom:10px;margin:0}
+#forma-design .fm-suggestion-label{font-size:10px;color:var(--wb-muted);letter-spacing:.03em;margin-bottom:1px}
+#forma-design .fm-suggestions button.fm-project-suggestion{display:block;text-align:left;width:100%;padding:9px 11px;background:var(--wb-panel);border:1px solid var(--wb-line);border-radius:10px;transition:background .18s,border-color .18s,transform .18s}
+#forma-design .fm-suggestions button.fm-project-suggestion:hover{background:var(--wb-bg);border-color:var(--wb-muted);transform:translateY(-1px)}
+#forma-design .fm-suggestion-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#forma-design .fm-suggestion-heading strong{font-size:11px;font-weight:500;color:var(--wb-ink);line-height:1.5}
+#forma-design .fm-suggestion-plus{font-size:15px;color:var(--wb-muted);line-height:1}
+#forma-design .fm-project-suggestion small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:var(--wb-muted);font-size:10px;line-height:1.6;margin-top:3px}
+#forma-design .fm-suggestion-note{font-size:10px;line-height:1.7;color:var(--wb-muted)}
+#forma-design .fm-suggestions button.fm-suggestion-retry{justify-self:start;font-size:10px;padding:5px 0;background:none;border:0;color:var(--wb-muted)}
+@media(prefers-reduced-motion:reduce){#forma-design .fm-suggestions button.fm-project-suggestion{transition:none;transform:none}}

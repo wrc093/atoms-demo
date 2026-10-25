@@ -27,7 +27,7 @@ class ServicePluginTest(unittest.TestCase):
         fake.write_text('#!'+sys.executable+'\nimport os,time\nos.write(1,b"\\x1b[0m")\ntime.sleep(60)\n')
         fake.chmod(0o755);tunnel=self.root/'frpc.toml';tunnel.write_text('# synthetic tunnel')
         config.write_text(json.dumps({'port':port,'database':str(self.root/'workspace.sqlite'),'heartbeat_seconds':1,
-            'frpc_binary':str(fake),'frpc_config':str(tunnel)}))
+            'frpc_binary':str(fake),'frpc_config':str(tunnel),'public_url':'https://public.example.invalid','keep_awake':False}))
         env={**os.environ,'SERVICE_BASE_CONFIG':str(config),'SERVICE_BASE_DATA_DIR':str(data)}
         return package,data,env
     def test_snapshot_contains_runtime_and_licenses_without_host_data_or_credentials(self):
@@ -65,6 +65,24 @@ class ServicePluginTest(unittest.TestCase):
             result=subprocess.run([sys.executable,str(package/'main.py')],env=env,capture_output=True,text=True,timeout=10)
             self.assertNotEqual(result.returncode,0);self.assertNotIn('"event": "ready"',result.stdout)
             self.assertIsNone(json.loads((data/'status.json').read_text())['app_pid'])
+
+    def test_immediate_restart_reuses_time_wait_port_and_checks_real_api(self):
+        with socket.socket() as probe:probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
+        package,data,env=self.package(port)
+        opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        for attempt in range(2):
+            log=self.root/f'restart-{attempt}.log'
+            with log.open('w') as output:
+                process=subprocess.Popen([sys.executable,str(package/'main.py')],env=env,stdout=output,stderr=output)
+                try:
+                    deadline=time.monotonic()+8
+                    while '"event": "ready"' not in log.read_text() and time.monotonic()<deadline:
+                        self.assertIsNone(process.poll(),log.read_text());time.sleep(.03)
+                    self.assertIn('"event": "ready"',log.read_text())
+                    request=urllib.request.Request(f'http://127.0.0.1:{port}/api/bootstrap',data=b'{}',headers={'X-Forma-Request':'1','Content-Type':'application/json'})
+                    with opener.open(request,timeout=2) as response:self.assertEqual(json.load(response)['apiVersion'],1)
+                finally:
+                    process.terminate();process.wait(timeout=12)
 
 
 if __name__=='__main__':unittest.main()

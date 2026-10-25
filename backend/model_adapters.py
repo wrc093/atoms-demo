@@ -71,24 +71,24 @@ def auth_headers(api,key):
     return {'Authorization':'Bearer '+key}
 
 
-def make_request(config,system,context,schema):
+def make_request(config,system,context,schema,max_tokens=12000):
     api=protocol_name(config.get('api','responses'))
     base=normalize_base(config.get('base_url','https://api.openai.com/v1'),api)
     model=config.get('model','gpt-4o-mini')
     if api=='chat_completions':
         endpoint=base+'/chat/completions'
         body={'model':model,'messages':[{'role':'system','content':system},{'role':'user','content':context}],
-              'response_format':{'type':'json_object'},'max_tokens':12000}
+              'response_format':{'type':'json_object'},'max_tokens':max_tokens}
         if urlsplit(base).hostname in ('api.deepseek.com','api.moonshot.cn','api.moonshot.ai'):
             body['thinking']={'type':'disabled'}
     elif api in ('responses','azure-openai-responses'):
         endpoint=base+'/responses'
-        body={'model':model,'instructions':system,'input':context,'store':False,'max_output_tokens':12000,
+        body={'model':model,'instructions':system,'input':context,'store':False,'max_output_tokens':max_tokens,
               'text':{'format':{'type':'json_schema','name':'forma_project','strict':True,'schema':schema}}}
     elif api=='anthropic-messages':
         # pi/Anthropic base URLs omit /v1; also support already-versioned bases.
         endpoint=base+('/messages' if base.endswith('/v1') else '/v1/messages')
-        body={'model':model,'max_tokens':12000,'system':system,'messages':[{'role':'user','content':context}],
+        body={'model':model,'max_tokens':max_tokens,'system':system,'messages':[{'role':'user','content':context}],
               'tools':[{'name':'forma_project','description':'Return the complete generated application project.','input_schema':schema}],
               'tool_choice':{'type':'tool','name':'forma_project'}}
     else:
@@ -96,11 +96,11 @@ def make_request(config,system,context,schema):
         endpoint=base+'/models/'+quote(name,safe='')+':generateContent'
         body={'systemInstruction':{'parts':[{'text':system}]},
               'contents':[{'role':'user','parts':[{'text':context}]}],
-              'generationConfig':{'maxOutputTokens':12000,'responseMimeType':'application/json','responseJsonSchema':schema}}
+              'generationConfig':{'maxOutputTokens':max_tokens,'responseMimeType':'application/json','responseJsonSchema':schema}}
     return api,endpoint,body
 
 
-def parse_project(api,raw):
+def parse_json(api,raw):
     api=protocol_name(api)
     try:
         result=json.loads(raw)
@@ -132,8 +132,15 @@ def parse_project(api,raw):
             if not isinstance(text,str):raise ValueError()
             fenced=re.fullmatch(r'\s*```(?:json)?\s*\n?(.*?)\n?```\s*',text,re.S|re.I)
             project=json.loads(fenced[1] if fenced else text)
-        if not isinstance(project,dict) or not isinstance(project.get('summary'),str) or not isinstance(project.get('files'),list):raise ValueError()
+        if not isinstance(project,dict):raise ValueError()
         return project
     except ModelProtocolError:raise
     except (ValueError,UnicodeDecodeError,KeyError,IndexError,TypeError,AttributeError,RecursionError):
         raise ModelProtocolError('模型返回的 JSON 或源码项目结构无效', repairable=True) from None
+
+
+def parse_project(api,raw):
+    project = parse_json(api,raw)
+    if not isinstance(project.get('summary'),str) or not isinstance(project.get('files'),list):
+        raise ModelProtocolError('模型返回的 JSON 或源码项目结构无效', repairable=True)
+    return project

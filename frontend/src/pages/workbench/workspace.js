@@ -18,6 +18,18 @@
   const mode=document.createElement('select');mode.className='fm-generation-mode';mode.setAttribute('aria-label','生成方式');
   product.querySelector('.fm-composer>div>span').replaceWith(mode);
   const modelPicker=FormaModelPicker.mount(mode,{compact:true});
+  let suggestionsInitialized=false;
+  const projectSuggestions=FormaSuggestions.mount(product.querySelector('.fm-suggestions'),{
+    request:(method,data)=>FormaAPI.request(api('/suggestions'),method,data),
+    input:product.querySelector('.fm-composer textarea'),
+    onConnect:()=>FormaModel.open(),
+  });
+  function syncSuggestions(){
+    if(!suggestionsInitialized||!detail)return;
+    projectSuggestions.update({version:detail.project.currentVersion,busy:!!active()||sending,
+      mode:mode.value,available:mode.value==='ai'?!!FormaAPI.settings?.modelReady:mode.value==='byok'&&!!FormaAPI.settings?.userModel?.ready,
+      state:detail.suggestions});
+  }
   const planButton=document.createElement('button');planButton.dataset.action='plan';planButton.className='fm-quiet fm-plan-button';planButton.innerHTML=icon('notebook-pen')+'方案';
   const buildButton=document.createElement('button');buildButton.dataset.action='build';buildButton.className='fm-quiet';buildButton.innerHTML=icon('play')+'更新预览';
   product.querySelector('.fm-project-actions').prepend(planButton,buildButton);
@@ -61,6 +73,7 @@
     product.querySelector('.fm-composer [type=submit]').disabled=!!active()||sending;mode.disabled=!!active()||sending;
     product.querySelector('.fm-canvas-footer>span:first-child').innerHTML=`<span class="fm-tiny-dot"></span>${detail.project.currentVersion?'运行 V'+detail.project.currentVersion:'等待首次构建'}${detail.project.dirty?' · 有未构建草稿':''}`;
     product.querySelector('.fm-canvas-footer>span:last-child').textContent=detail.project.dirty?'草稿已保存 · 等待更新预览':'所有更改已保存';
+    syncSuggestions();
     icons();if(scroll)thread.scrollTo({top:thread.scrollHeight,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
   }
   async function preview(){
@@ -127,8 +140,6 @@
       switch(button.dataset.action){
         case 'close':close();break;
         case 'history':case 'current':await history();break;
-        case 'warm':await generate('切换为暖橙色调，保留全部现有功能。');break;
-        case 'rename':modal(`<span class="fm-modal-eyebrow">MAKE IT YOURS</span><h2 id="fm-dialog-title">给想法一个名字。</h2><form class="fm-server-rename"><label for="server-app-name">应用名称</label><input id="server-app-name" name="name" maxlength="32" required placeholder="例如：慢读"><button class="fm-primary" type="submit">生成名称修改${icon('arrow-right')}</button></form>`);break;
         case 'build':button.disabled=true;try{await build();}finally{renderThread();}break;
         case 'resume':if(hasDrafts())break;if(detail.job.requiresKey&&!await FormaModel.open())break;await FormaAPI.request('/jobs/'+encodeURIComponent(detail.job.id)+'/resume','POST',{});await load(false,true);break;
         case 'cancel':await FormaAPI.request('/jobs/'+detail.job.id+'/cancel','POST',{});await load(false,true);break;
@@ -146,7 +157,6 @@
   product.addEventListener('submit',async event=>{
     const form=event.target;event.preventDefault();
     if(form.classList.contains('fm-composer'))await generate(form.querySelector('textarea').value.trim());
-    if(form.classList.contains('fm-server-rename')){const name=new FormData(form).get('name').trim();if(name){close();await generate('改名为「'+name+'」，保留其他功能。');}}
   });
   overlay.addEventListener('click',event=>{if(event.target===overlay)close();});
   product.addEventListener('keydown',event=>{
@@ -167,14 +177,15 @@
     catch(error){source.postMessage({type:'forma-runtime-result',token,id:message.id,error:error.message},'*');toast('应用数据未能保存：'+error.message);}
     finally{runtimePending--;if(task&&runtimeQueues.get(message.key)===task)runtimeQueues.delete(message.key);}
   });
-  window.addEventListener('forma-user-model-selected',()=>{mode.value='byok';modelPicker.sync();});
-  window.addEventListener('forma-model-connection-change',()=>{mode.innerHTML=FormaModel.options(mode.value||'byok');});
-  mode.addEventListener('change',()=>{if(mode.value==='byok'&&!FormaAPI.settings?.userModel?.ready)FormaModel.open();});
-  window.addEventListener('pagehide',()=>clearTimeout(pollTimer));
+  window.addEventListener('forma-user-model-selected',()=>{mode.value='byok';modelPicker.sync();syncSuggestions();});
+  window.addEventListener('forma-model-connection-change',()=>{mode.innerHTML=FormaModel.options(mode.value||'byok');syncSuggestions();});
+  mode.addEventListener('change',()=>{if(mode.value==='byok'&&!FormaAPI.settings?.userModel?.ready)FormaModel.open();syncSuggestions();});
+  window.addEventListener('pagehide',()=>{clearTimeout(pollTimer);projectSuggestions.destroy();});
   ready.then(async data=>{
     if(!data.user||data.user.guest){go('/login?next='+encodeURIComponent('/workspace/'+id));return;}
     await load();
     mode.innerHTML=FormaModel.options(detail.project.plan.mode|| (data.settings.modelReady?'ai':'byok'));
+    suggestionsInitialized=true;syncSuggestions();
     icons();
   }).catch(error=>{thread.innerHTML='<p class="fm-response" role="alert">'+esc(error.message)+'</p>';toast(error.message);});
 })();
