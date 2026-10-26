@@ -1,126 +1,105 @@
-# Forma — 应用构建工作空间
+<h1 align="center">Forma</h1>
 
-保留简洁的多页前端，已接入真实后端：账号、项目、生成任务、源码、上传文件、版本和应用运行数据都保存在服务端。可以通过 DeepSeek 生成应用，继续对话修改，或在 CodeMirror 中编辑源码并更新预览。
+<p align="center"><strong>让想法，有了形状。</strong><br>用自然语言构建应用，在同一个工作空间里预览、修改和继续打磨。</p>
 
-实现思路、完成情况和后续安排见 [项目说明](docs/submission-draft.md)。[在线演示](https://forma.179-253-234-78.sslip.io:18443/)由本机 Service Base 插件托管，经私有 FRP 通道和 HTTPS 入口访问。
+<p align="center">
+  <a href="#快速开始"><img src="https://img.shields.io/badge/Python-3.11%2B-53704a?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.11+"></a>
+  <a href="#快速开始"><img src="https://img.shields.io/badge/Node.js-18%2B-53704a?style=flat-square&amp;logo=nodedotjs&amp;logoColor=white" alt="Node.js 18+"></a>
+  <a href="#工程结构"><img src="https://img.shields.io/badge/storage-SQLite-7c806f?style=flat-square&amp;logo=sqlite&amp;logoColor=white" alt="SQLite storage"></a>
+  <a href="#模型接入"><img src="https://img.shields.io/badge/model-BYOK-a17d58?style=flat-square" alt="Bring your own API Key"></a>
+  <a href="#skill-扩展"><img src="https://img.shields.io/badge/extend-Skills-a17d58?style=flat-square" alt="Custom Skills"></a>
+</p>
 
-## 启动
+<p align="center">
+  <a href="https://forma.179-253-234-78.sslip.io:18443/"><strong>在线体验 ↗</strong></a> ·
+  <a href="docs/submission-draft.md">项目说明</a> ·
+  <a href="docs/architecture.md">架构设计</a> ·
+  <a href="SECURITY.md">安全说明</a>
+</p>
 
-需要 Python 3.11+、Node.js 18+（用于 CSS 解析和 JavaScript 语法检查，不执行生成的程序）。运行无需安装额外的 Python 或 npm 包；HTML/CSS 校验依赖随源码放在 `backend/vendor/`，保留了许可证。
+<p align="center">
+  <img src="docs/images/cover.svg" alt="Forma 概念封面：描述想法、构建应用、继续打磨" width="100%">
+</p>
+
+Forma 是一个从想法到可运行小应用的工作空间。写下需求，选择模型，生成第一版；接着可以用对话修改，也可以直接编辑源码。项目文件、版本和应用数据都保存在服务端，关掉页面后还能回来继续。
+
+当前聚焦无需安装依赖的 **HTML / CSS / JavaScript 应用**，已完成账号、生成、预览、编辑、版本与恢复的完整流程。平台模型和自带 Key 模式会真实调用 AI；基础示例是单独标注的模板体验模式。
 
 ```bash
 python3 -m backend
 ```
 
-访问 http://127.0.0.1:8770/ 。请使用此入口启动，旧的 `python3 -m http.server` 只会提供静态文件，无法使用后端。
+<p align="center"><a href="#产品一览">产品一览</a> · <a href="#快速开始">快速开始</a> · <a href="#模型接入">模型接入</a> · <a href="#skill-扩展">Skill 扩展</a> · <a href="#工程结构">工程结构</a> · <a href="#部署与运维">部署与运维</a> · <a href="#验证与边界">验证与边界</a></p>
 
-使用工作空间前必须注册或登录。匿名访问不会自动创建账号、项目或会话；首页可浏览，项目、方案、构建、编辑器、模型连接以及相关 API 都要求有效的账号会话。未登录访问工作页面会进入登录页，登录后返回原页面。
+## 产品一览
 
-首页依据服务端恢复的登录状态显示账号和「我的项目」，返回首页或刷新后仍保留；底部工作空间入口也直接进入项目列表。已登录访问登录/注册页会返回工作空间。点击首页账号可管理退出，退出后首页恢复登录与注册入口。
+**一个空间，完成从第一版到下一版。** 左侧沟通需求，右侧查看实际运行效果；源码、文件和历史版本随时可查。
 
-旧访客 Cookie 不能继续访问工作空间。当前浏览器注册时会升级旧访客账号并保留项目；登录已有账号时，会把当前旧访客会话所属项目归入该账号。项目文件、版本和运行数据不删除。不同账号的项目相互隔离。
+<p align="center">
+  <img src="docs/images/workspace.png" alt="Forma 实际工作台：左侧对话和项目优化建议，右侧运行阅读收藏夹，顶部提供预览、编辑器和文件入口" width="100%">
+</p>
 
-旧前端原型的 localStorage / IndexedDB 数据没有删除，也不会自动冒充服务端项目导入。现在 localStorage 只用于外观与编辑器标签偏好。
+> 实际工作台截图 · 基础示例「阅读收藏夹」，展示预览、对话和项目优化建议。
 
-## 工程目录与开发命令
+| 想做什么 | Forma 如何支持 |
+| --- | --- |
+| 把想法做出第一版 | 名称与自然语言需求形成简报，确认后启动构建，不要求先选应用类型或视觉风格 |
+| 继续调整应用 | 对话基于现有源码修改；优化建议结合当前项目与版本生成，点击后先填入草稿 |
+| 自己改代码 | CodeMirror 编辑实际项目文件；保存草稿后检查 HTML、CSS、JavaScript，再更新预览 |
+| 看清每次改动 | 完整源码版本、文件差异和历史预览；恢复源码新增版本，保留应用数据 |
+| 暂停后接着做 | 持久化任务会话和源码检查点，重新打开项目可以恢复；离开页面不终止任务 |
+| 换模型或带上自己的方法 | 支持自带 API Key、5 种模型协议，以及主导和局部 Skill 插入点 |
+| 管理文件与带走成果 | 文件夹上传、浏览、下载，以及附带本地数据适配器的源码 ZIP 导出 |
 
-```text
-frontend/                 前端工程（页面、共享组件、资源、开发脚本和测试）
-  index.html              产品流程入口
-  workbench.html          工作台入口
-  src/app/                路由、基础样式和主题
-  src/pages/              首页、方案、构建进度、工作台
-  src/components/         模型连接、选择器、Skill、并发提示
-  src/api/                API 客户端
-  src/shared/             共享动效
-  src/devtools/           元素定位等开发工具
-  assets/                 字体、第三方浏览器库、Skill 模板
-  scripts/                本机开发、静态发布、语法检查
-  tests/                  前端回归测试
-backend/                  Python API、业务、存储、生成与源码校验
-  __main__.py             python3 -m backend 入口
-  server.py               HTTP/API、鉴权与可选静态托管
-  tests/                  后端集成与安全测试
-  vendor/                 HTML/CSS 校验依赖及许可证
-deploy/                   反向代理配置、Service Base 插件与打包脚本
-docs/                     项目说明与架构说明
-.data/                    本机运行数据（不提交）
-```
+<table>
+  <tr>
+    <td width="53%" valign="top"><img src="docs/images/generation.png" alt="生成等待页：真实任务阶段、事件记录，以及可暂停的分层构形动画" width="100%"></td>
+    <td width="47%" valign="top"><img src="docs/images/skills.png" alt="Skill 配置：主导 Skill 与视觉、架构等局部插入点，使用统一的选择器" width="100%"></td>
+  </tr>
+  <tr>
+    <td><strong>等待时，也知道进展。</strong><br>任务阶段来自后端事件；右侧为动态示意，支持暂停和减少动态效果。</td>
+    <td><strong>把自己的方法带进来。</strong><br>一个主导 Skill 统筹方向，局部 Skill 补充具体领域的方法。</td>
+  </tr>
+</table>
 
-根目录只保留项目说明、协作约定、配置模板和 `Makefile`。更详细的职责和部署边界见 [架构说明](docs/architecture.md)。
+界面支持浅色 / 深色、响应式布局与减少动态效果。工作台对话栏可调整宽度，元素检查器可拖动，方便反馈具体位置的问题。
 
-默认 `make dev` 或 `python3 -m backend` 启动同源开发环境。前端与 API 也可以分别运行：
+## 快速开始
 
-```bash
-# 终端 1：只启动 API，默认 8770
-make backend
-# 终端 2：独立前端，默认 5173；/api 代理到 8770
-make frontend
-```
-
-打开 http://127.0.0.1:5173/ 。前端通过 `/api` 交互，Cookie 和 CSRF 校验维持同源行为，开发代理仅监听本机。独立前端命令不读取后端 `.env`；可通过进程环境变量 `FORMA_FRONTEND_PORT`、`FORMA_API_ORIGIN` 修改端口。
-
-`make build` 输出 `frontend/dist/`，只包含两份 HTML、`src/` 和 `assets/`，不包含后端、测试、开发脚本、数据库和凭据。当前使用原生 HTML/CSS/JS，不需要转译；发布命令负责准备完整的静态发布目录。`make check` 检查前端语法，`make test` 运行前后端测试。
-
-## 公网演示与 Service Base 托管
-
-在线演示：https://forma.179-253-234-78.sslip.io:18443/ 。GitHub 仓库已公开。访问后可以注册自己的账号；真实生成可使用平台模型或自己的 Key，无 Key 时可选择基础示例。
-
-当前路径是浏览器 → VPS 的 Caddy HTTPS 入口 → FRP STCP 私有通道 → 这台 Mac 上的应用。TLS 证书由 Caddy 自动申请和续期；FRP visitor 只监听 VPS 的回环地址，没有新增直接访问后端的公网端口。应用和数据继续保留在本机，现有 FRP 通道保持独立运行。
-
-本机应用作为 `forma-demo` 插件接入现有 Service Base，由基座负责登录后启动、心跳检查、故障重启和子进程回收。健康检查同时验证 `/api/health` 和匿名 `/api/bootstrap`，通过后才报告 ready，后台每 10 秒检查一次；FRP 子进程退出或应用持续不健康时，由基座重新拉起插件。端口预检允许正常的 TIME_WAIT 复用，仍会拒绝已有监听进程。
-
-Mac 上插件运行期间默认用系统 `caffeinate` 阻止空闲休眠，屏幕仍可关闭；配置 `keep_awake=false` 可关闭这一行为。关闭终端不影响服务。电脑需接电、开机并联网；手动休眠、合盖、关机或网络中断仍会影响访问。当前地址作为交付入口保留，日常更新只替换插件快照，不更换域名或端口。
-
-提交材料使用固定链接：[项目说明](https://lcnsefi0x07g.feishu.cn/wiki/XS8swQKcQiGIHpk7exRcE9eunsf)、[工具用量与截图](https://lcnsefi0x07g.feishu.cn/wiki/TyplwSMFeiVJDRk8KIdc8us8nng)。后续补充在这两份自有文档中进行，保留已填入回收通道的地址。
-
-插件协议适配器和可复现的打包脚本位于 `deploy/service-base/`。打包只复制运行代码和前端文件；模型配置、数据库和隧道认证配置通过路径引用，不进入源码仓库或插件包。
+需要 **Python 3.11+** 和 **Node.js 18+**。Python 服务使用标准库；Node 用于 CSS 解析和 JavaScript 语法检查，不执行生成的程序。校验依赖与许可证已随仓库提供，无需额外安装 pip 或 npm 包。
 
 ```bash
-# 使用本机已有数据和配置构建插件；基座本身需事先安装。
-python3 deploy/service-base/build.py \
-  --env-file "$PWD/.env" \
-  --database "$PWD/.data/forma.sqlite3" \
-  --public-url "https://你的公网域名" \
-  --frpc-binary "/绝对路径/frpc" \
-  --frpc-config "/私有配置目录/frpc.toml"
-
-# install 相同 ID 会更新该插件的快照，不重启基座或其他插件。
-~/.local/bin/service-base install "$PWD/build/service-base"
-~/.local/bin/service-base status
-~/.local/bin/service-base logs forma-demo
-~/.local/bin/service-base restart forma-demo
+git clone https://github.com/wrc093/atoms-demo.git
+cd atoms-demo
+python3 -m backend
 ```
 
-首次从手动启动迁移时，应先确认没有运行任务，备份 SQLite，再停止已确认的旧应用进程，避免两个实例争用同一端口。未配置 FRP 时，插件也能单独托管本地应用。安装后的配置更新使用基座的 `configure` 命令；代码改动后需要重新打包和 install，源码目录修改不会自动替换已安装快照。
+打开 [localhost:8770](http://127.0.0.1:8770/)，注册账号后新建项目。首页可匿名浏览，项目、生成、编辑器及相关 API 都要求登录。
 
-当前 VPS 的入口配置位于 `/opt/forma-edge/Caddyfile`，FRP visitor 私有配置位于 `/opt/forma-edge/visitor.toml`，分别由 `forma-edge` 和 `forma-frp-visitor` 两个 systemd 服务管理。HTTPS 使用 18443，80 用于证书签发，原有 443 服务保持独立。visitor 仅绑定 `127.0.0.1:18770`，通过 STCP 连接到本机的 8770；不要把 visitor 改成公网监听。本机隧道配置保存在 `.data/frp/frpc.toml`，随应用一起由插件管理。
+- **直接体验流程**：选择「基础示例」，不需要模型 Key。支持已有阅读、待办、作品集示例；自由生成请切换模型。
+- **使用自己的模型**：在方案页选择「使用自己的 API Key」，连接服务后构建。
+- **提供平台模型**：复制 `.env.example` 为 `.env`，填写服务配置后重启，详见下节。
 
-如果公网访问异常，先检查本机插件和 `/api/health`，再在 VPS 上检查入口与隧道：
+默认数据库为 `.data/forma.sqlite3`；`.env`、运行数据和临时产物均不提交 Git。请使用 `python3 -m backend` 或 `make dev` 启动，普通静态文件服务器无法提供账号和生成能力。
 
-```bash
-curl --fail http://127.0.0.1:8770/api/health
-# 以下命令在 VPS 上执行
-systemctl status forma-edge forma-frp-visitor
-journalctl -u forma-edge -u forma-frp-visitor -n 100 --no-pager
-/opt/forma-edge/caddy validate --config /opt/forma-edge/Caddyfile --adapter caddyfile
-```
+## 模型接入
 
-备份运行中的 SQLite 时使用 SQLite backup API 或 `.backup`，不要只复制主数据库文件而漏掉 WAL。备份、环境文件和 FRP 密钥应存放在私有目录；当前尚未配置定期异地备份。
+平台模型与 BYOK 共用协议适配和源码校验。服务目录与协议实现位于 `backend/model_adapters.py`，前端从后端获取目录。
 
-公网域名需要通过 `FORMA_PUBLIC_URL` 配置，公网会话 Cookie 才会带 Secure 标记。插件同时启用 `FORMA_ALLOW_LOCAL_ACCESS=1`，允许这台电脑通过 `http://127.0.0.1:8770/` 登录；仅连接来源与 Host 都是本机、且没有代理头时采用本机会话规则。公网 Host 仍要求代理地址校验，公网 Cookie 保留 Secure。独立运行默认不开启该例外。使用独立环境文件时可设置 `FORMA_ENV_FILE`。只有明确受信的边缘代理可以覆盖 `X-Real-IP`；隧道密钥、服务端 token 和证书私钥保存在各机器的私有配置目录，不写进 Git。平台模型的应用内任务额度已启用，费用硬上限和上游 DDoS 防护仍需结合服务商配置。
+| 协议 | 常见接入对象 |
+| --- | --- |
+| Chat Completions | DeepSeek、OpenAI 兼容网关等 |
+| Responses | OpenAI 及兼容服务 |
+| Anthropic Messages | Claude |
+| Google Generative AI | Gemini 原生接口 |
+| Azure OpenAI Responses | Azure 模型部署，API Key 认证 |
 
-仓库里的 `deploy/nginx.conf.example` 是另一种前后端静态分离部署的参考模板。本机当前实际使用 Caddy + FRP，Nginx 模板未在目标环境运行验证。
+界面提供 DeepSeek、OpenAI、Anthropic、Google、Azure OpenAI、OpenRouter、通义千问、Moonshot、智谱、Groq、Mistral、xAI 和 MiniMax 预设，也支持自定义 HTTPS Base URL。预设只是连接建议，具体模型权限取决于账号。DeepSeek 已完成真实调用验证，其余协议通过本机模型替身验证请求与生成链路，不代表每家厂商都已实测。
 
-## 使用自己的 API Key
+**用户 Key 只保存在服务进程内存中**，按用户隔离，不写入 SQLite、浏览器存储、项目或源码。退出、移除连接或服务重启会清除；已经提交的任务使用提交时的连接。保存连接仅检查配置，首次构建才验证真实服务和 Key，费用由对应账号承担。
 
-在方案页的「构建方式」选择「使用自己的 API Key」，再填写服务、模型名称和 Key。内置 DeepSeek、OpenAI、Anthropic/Claude、Google/Gemini、Azure OpenAI、OpenRouter、通义千问、Moonshot/Kimi、智谱/GLM、Groq、Mistral、xAI 和 MiniMax 预设。选择服务会自动匹配地址、建议模型名与协议，模型名仍可按自己的账号修改；自定义网关可在「连接选项」填写 HTTPS Base URL 并选择协议。保存连接只校验配置，首次构建时才调用模型并验证 Key；费用由用户自己的服务账号承担。
-
-Key 按当前用户隔离，只保存在本机服务进程内存中，不写入 SQLite、浏览器存储、项目方案或源码。响应仅返回服务、模型和协议等连接元信息。退出账号、切换账号或重启服务会清除连接，也可以主动移除；已提交任务使用提交时的连接，移除影响后续任务。工作台「更多项目操作 → 模型与 API Key」可以管理连接，保存后切换到用户模型。
-
-用户服务的地址会进行公网校验；请求绑定已校验的 IP 并保留 TLS 主机名与证书校验，拒绝重定向。本机 HTTP 代理通过 CONNECT 连接已校验的公网 IP；当 TUN 代理返回已知的虚拟 DNS 地址时，通过 Cloudflare DNS-over-HTTPS 获取真实地址后再校验，不向 DNS 服务发送 Key 或源码。
-
-## 平台模型配置
+<details>
+<summary><strong>平台配置、协议参数与凭据引用</strong></summary>
 
 将 `.env.example` 复制为 `.env`，按服务填写。以 DeepSeek 为例：
 
@@ -143,147 +122,207 @@ FORMA_MODEL_API_KEY=填写你自己的Key
 
 Azure 模型名称填写部署名称，当前只支持 API Key，不包含 Entra ID 登录。后端也接受 pi 的 `openai-completions`、`openai-responses` 名称，映射到既有协议。Vertex、Bedrock 和 OAuth/订阅登录暂未接入，当前支持上述 API Key 协议。所有预设模型都是可修改的建议，不代表当前 Key 一定拥有该模型权限。
 
-实现参考本机 `pi-ai 0.85.0` 的 Provider 与 API 分层：服务目录和协议适配集中在 `backend/model_adapters.py`，前端从登录后的模型连接 API 获取目录。不同协议独立构造请求与解析响应，再统一交给源码校验与版本提交。Anthropic 使用带源码 Schema 的强制工具输出，兼容服务返回完整 JSON 文本时也可解析；Gemini 使用原生 JSON Schema 输出并排除思考文本；截断、安全拦截和无效项目会失败，不保存为成功版本。Gemini Key 放在请求头中，模型名编码成路径段，禁止将 Key 放入 URL。
-
-本轮使用本机模拟服务验证全部 5 种协议的真实 HTTP 请求、认证头、完整生成任务和源码快照，没有使用真实 Key 调用新增服务；实际服务的可用模型和额度以用户账号为准。
-
-在这台机器上，已根据用户授权配置 `FORMA_MODEL_PI_PROVIDER=deepseek`：服务端仅从 `~/.pi/agent/auth.json` 读取该名称的 `api_key` 条目。`.env` 保存的是凭据引用，没有复制 Key。换机器运行时需要配置自己的 Key，或显式指定自己的 pi 凭据来源；不会自动扫描其他凭据。
+Provider 与协议分层参考 [pi-ai](https://github.com/badlogic/pi-mono/tree/main/packages/ai)：服务目录和协议适配集中在 `backend/model_adapters.py`，前端从登录后的模型连接 API 获取目录。不同协议独立构造请求与解析响应，再统一交给源码校验与版本提交。Anthropic 使用带源码 Schema 的强制工具输出，兼容服务返回完整 JSON 文本时也可解析；Gemini 使用原生 JSON Schema 输出并排除思考文本；截断、安全拦截和无效项目会失败，不保存为成功版本。Gemini Key 放在请求头中，模型名编码成路径段，禁止将 Key 放入 URL。
 
 Key 不会出现在 API 响应、浏览器存储、日志或源码导出中。`.env` 和 `.data/` 已加入 `.gitignore`，也不能经静态文件接口访问。变更服务端配置后需要重启。
 
-协议依据：[pi 多 Provider 实现](https://github.com/badlogic/pi-mono/tree/main/packages/ai)、[Gemini GenerateContent](https://ai.google.dev/api/generate-content)、[Azure Responses](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/responses?view=foundry-classic)、[DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode/)、[OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)。兼容模式使用 JSON Output，服务端仍独立校验结构和源码。
+协议依据：[Gemini GenerateContent](https://ai.google.dev/api/generate-content)、[Azure Responses](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/responses?view=foundry-classic)、[DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode/)、[OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)。兼容模式使用 JSON Output，服务端仍独立校验结构和源码。
 
-## 自定义 Skill 扩展
+可选的 `FORMA_MODEL_PI_PROVIDER=deepseek` 只引用本机 `~/.pi/agent/auth.json` 中指定 Provider 的 `api_key`，不会自动扫描其他凭据。换机器时需配置自己的 Key 或凭据来源。
 
-项目列表侧栏「我的 Skill」管理个人方法库；方案页「配置 Skill」以及工作台「更多项目操作 → Skill 扩展」选择这个项目要使用的方法。支持一个主导 Skill 统筹整体创作，再分别为视觉风格、应用架构、功能与交互、质量检查选择局部 Skill。所有插入点默认留空；配置不会限制用户的应用类型，也不会代替本次明确需求。
+用户自定义地址经过公网校验，请求绑定已校验的 IP，保留 TLS 主机名与证书校验，拒绝重定向。具体网络与 SSRF 防护见 [SECURITY.md](SECURITY.md)。
 
-可上传 UTF-8 Markdown（包括常见的 `SKILL.md` + YAML frontmatter），或包含一个 `SKILL.md` 入口及参考文件的 ZIP 包。支持单层包装目录，保留相对路径、未知元数据和文本参考资料；可查看包内文件、搜索、下载包、移出库以及重新导入。上传相同内容会复用已有记录，更新后的内容生成独立指纹，不会覆盖运行中任务的快照。页面提供可下载的 [Skill 模板](frontend/assets/skills/SKILL.md)。
+</details>
 
-当前接入的是**指令与参考资料层**：选中的入口正文、文本参考文件、插入点范围、版本与 SHA-256 指纹进入统一模型上下文，平台模型和 BYOK 的所有已支持协议共用。主导 Skill 提供整体方法，局部 Skill 只在对应领域细化它。优先级为平台运行约束 → 本次明确需求 → 对应局部 Skill → 主导 Skill → 默认习惯。包里的 `allowed-tools` 等未知元数据原样保留，不代表授权执行工具；脚本与二进制附件保留供下载，不执行、不读取远程引用、不直接导入生成页面。真正的工具/脚本执行器是独立的后续扩展，当前不会声称已执行。
+## Skill 扩展
 
-项目选择与方案分开保存，自动保存名称或需求不会丢失 Skill。新生成和对话修改在启动时冻结 Skill 快照，自动修复沿用快照，中断/重启后的恢复也沿用原快照。修改配置或移出个人库仅影响后续新任务。基础示例无法遵循模型 Skill，因此选中 Skill 后会明确要求使用平台模型或自己的 Key。启用的 Skill 与文本参考资料将发给所选模型服务，未启用的个人库内容不会发送。
+在「我的 Skill」上传 Markdown 或包含 `SKILL.md` 的 ZIP，在方案页或工作台绑定到项目：
 
-上传限制：单包 2 MB、64 个文件，入口正文 64 KB；所选指令与文本参考总计 160 KB，连同项目源码不超过既有 350 KB 上下文上限，超限明确拒绝。个人库最多 40 条记录、16 MB，平台最多 2,000 条、128 MB，移出的历史记录仍占用存储配额；重新上传相同文件可恢复该记录。导入并发独立限为 2，禁止 ZIP 路径穿越、隐藏凭据文件、符号链接、加密包、重复路径和超量解压；包不解压到主机文件系统。个人库、预览、导出与项目绑定均要求登录并校验所属用户。
+| 插入位置 | 作用 |
+| --- | --- |
+| 主导 Skill | 整体创作方向、工作方法与领域约定 |
+| 视觉风格 | 布局、字体、色彩与动效方法 |
+| 应用架构 | 文件组织、模块边界与数据设计 |
+| 功能与交互 | 操作流程、反馈和异常状态 |
+| 质量检查 | 验收、可用性与质量要求 |
 
-插入点注册集中在 `backend/skills.py`：新增 `register_point('copywriting', '文案方法', '页面文案与语气')` 后，目录 API、前端选择、服务端校验与模型上下文自动支持该位置。注册应在服务启动时完成；插入点机制与模型协议、文件存储、生成器分离，无需在每个 Provider 中分别添加逻辑。
+插入点默认留空，按需配置；不会让用户先在固定风格或应用类型中做选择。[下载 Skill 模板](frontend/assets/skills/SKILL.md)。
 
-## 使用流程
+Skill 接入的是**指令与参考资料层**。启用的正文和文本参考会发送给所选模型，包内脚本不执行，远程引用不读取，未知元数据不等于工具授权。优先级为：平台运行约束 → 本次明确需求 → 对应局部 Skill → 主导 Skill → 默认习惯。
 
-1. 新建项目，直接填写名称和需求，不需要选择应用类型。
-2. 确认创作简报，选择平台模型、自己的 API Key 或基础示例体验。方案草稿自动保存到服务端，确认后才触发构建。
-3. 构建页读取真实任务状态：读取需求 → 生成代码 → 校验源码 → 保存版本。离开后可从项目重新查看任务。
-4. 工作台右侧运行生成的应用，左侧继续对话修改；编辑器打开的就是该项目实际源码。
-5. 保存源码会先保留草稿，再进行校验和预览构建；校验失败时继续运行上一次成功版本，不丢失草稿。
-6. 版本面板展示完整源码版本、实际文件前后内容及版本预览。恢复旧源码会新增版本，不覆盖历史。
-7. 文件页支持文件/文件夹选择、拖放上传、目录浏览、查看和下载。文件持久化到 SQLite，不依赖浏览器 IndexedDB。
+<details>
+<summary><strong>包格式、任务快照与扩展新的插入点</strong></summary>
 
-基础示例是无模型调用的真实代码构建，明确标注为 `starter`。内部根据描述选择已有阅读、待办或作品集示例，示例对话修改仅支持改名与配色切换；自由需求应使用平台模型或自己的 Key，不会静默降级为假生成。模型收到的方案仅包含名称和需求，不包含预设类型、能力清单或配色限制；首次构建从需求出发；已有项目保存方案后返回工作台，对话修改提供现有源码以保留功能和数据，不自动重发原需求。
+支持 UTF-8 Markdown、YAML frontmatter、单层 ZIP 包装目录和相对路径参考文件。未知元数据及二进制附件保留供下载；包不解压到主机文件系统。相同内容复用记录，更新内容生成独立指纹。
 
-生成范围为无需安装依赖的 HTML / CSS / JavaScript 小应用。模型拿到本项目需求和当前源码，返回完整文件集；不会自动发送上传的参考资料。服务端检查文件路径、HTML 入口、项目内资源引用、CSS 和 JS 语法；若模型源码未通过校验，最多再请求一次修复，然后才保存版本。
+任务启动时冻结 Skill 正文、参考资料、范围、版本和 SHA-256 指纹。自动修复与中断恢复沿用原快照，修改配置或移出个人库只影响后续任务。基础示例不执行模型指令，选择 Skill 后需要使用平台模型或 BYOK。
 
-CSS 使用内置的 PostCSS 解析器和括号 token 配对检查，覆盖所有 `.css` 源码及 HTML 的 `<style>`、`style` 属性。缺少花括号、括号不匹配、未结束的引号或注释等会返回文件、行列，并可在编辑器中定位。解析器不执行插件、不加载源码映射或外部资源；缺失或超时会阻止更新预览。校验失败仍保留草稿与上一成功版本，不写入新的“检查通过”消息。这里检查语法和结构，不保证每个 CSS 属性值都有效，也不代表布局、交互和浏览器兼容性已经验证。
+单包最多 2 MB / 64 个文件，入口正文最多 64 KB；所选文本总计 160 KB，连同源码不超过 350 KB 上下文。个人库最多 40 条 / 16 MB，平台最多 2,000 条 / 128 MB；移出的历史记录仍计入存储配额。导入并发限为 2，拒绝路径穿越、凭据文件、符号链接、加密包、重复路径与超量解压。
 
-## 项目优化建议
+插入点集中注册在 `backend/skills.py`。服务启动时增加注册后，目录 API、前端选择、服务端校验和模型上下文会共同支持新位置，无需逐个修改 Provider：
 
-工作台输入框上方会显示两条针对当前项目的优化方向，并简要说明对用户的帮助。模型根据项目目标、当前成功版本的源码及最近修改提出建议，避免重复已有功能或只推荐固定的换色、改名。点击建议只会填入输入框，保留已有文字；用户可以调整后再发送。
+```python
+register_point('copywriting', '文案方法', '页面文案与语气')
+```
 
-模型构建时一并返回建议，随成功版本保存，不额外请求模型。旧项目或手动构建的新版本没有建议时，使用当前选择的模型在后台补生成，刷新页面复用缓存。未连接模型、生成失败或额度不足时显示相应入口和提示，不用固定话术代替。建议只参考成功版本，不读取未保存草稿、上传素材或应用运行数据。
+</details>
 
-补生成最多输出 1200 tokens，全局同时只运行一次，并与构建共用 3 个物理执行槽。单次失败后至少间隔 60 秒才能重试；24 小时内平台建议每用户最多 8 次、全局 24 次，所有模式每用户最多 30 次，自带 Key 模式全局最多 100 次。它们与构建次数额度分开记录；超过建议额度仍可直接输入需求。
+## 工程结构
 
-## 存储与预览边界
+前端按页面与共享组件组织，后端承担鉴权、任务和存储。浏览器通过同源 `/api` 交互；开发时可拆开运行，部署时也可由后端直接托管前端。职责划分与取舍见 [架构设计](docs/architecture.md)。
 
-数据库默认位于 `.data/forma.sqlite3`，包含：
+```text
+frontend/
+├── index.html, workbench.html   产品流程与工作台入口
+├── src/
+│   ├── app/                    路由、基础样式与主题
+│   ├── pages/                  首页、方案、构建、工作台
+│   ├── components/             模型连接、选择器、Skill 等共享组件
+│   ├── api/                    API 客户端与会话初始化
+│   ├── shared/                 共享动效
+│   └── devtools/               元素检查工具
+├── assets/                     字体、浏览器库、Skill 模板与许可证
+├── scripts/                    开发、检查与静态发布
+└── tests/                      前端回归测试
+backend/
+├── server.py                   HTTP/API、鉴权与静态托管
+├── core.py                     存储、项目、任务与模型调用
+├── compiler.py                 源码校验、预览隔离与运行数据桥
+├── model_adapters.py           Provider 目录与协议适配
+├── skills.py                   个人库、插入点与任务快照
+├── vendor/                     HTML/CSS 校验依赖与许可证
+└── tests/                      集成、安全与协议测试
+deploy/                         反向代理模板、Service Base 插件与打包
+docs/                           项目说明、架构与展示资源
+```
 
-- 使用 scrypt 哈希的密码、散列会话令牌；浏览器只持有 HttpOnly 会话 Cookie。
-- 账号所属项目、方案、收藏、真实任务状态和事件、对话记录。
-- 源码文件和上传文件的原始内容、MIME、文件修订号。
-- 完整源码版本快照，以及与源码独立的应用运行数据。
+| 命令 | 用途 |
+| --- | --- |
+| `make dev` | 同源运行，默认 `127.0.0.1:8770` |
+| `make backend` | 只启动 API，默认 8770 |
+| `make frontend` | 独立前端，默认 5173，`/api` 代理到 8770 |
+| `make check` | 前端语法与工程检查 |
+| `make test` | 后端集成测试与前端回归测试 |
+| `make build` | 生成 `frontend/dist/` 静态发布目录 |
+| `make service-plugin` | 构建 Service Base 插件包 |
 
-运行预览采用 `sandbox` iframe，不开放同源权限，生成代码不在服务器执行。CSP 禁止预览主动联网、提交外部表单或加载远程脚本。HTML 表单可以触发应用自己的交互事件，实际导航提交仍受 CSP 阻止。
+前端采用原生 HTML / CSS / JavaScript，无转译步骤。静态发布目录仅包含浏览器需要的 HTML、`src/` 和 `assets/`，不包含测试、数据库、后端或凭据。独立前端不读取后端 `.env`，可用 `FORMA_FRONTEND_PORT` 和 `FORMA_API_ORIGIN` 调整开发代理。
 
-生成代码通过同步 `FormaStore.get(key, fallback)` 和异步 `FormaStore.set(key, value)` 读写应用数据。宿主校验 iframe 来源和随机令牌后，按键串行写入服务端。运行数据和上传素材不会随源码回滚而删除。版本面板的预览为只读，不写入应用数据。
+<details>
+<summary><strong>主要 API</strong></summary>
 
-源码保存使用文件修订号防止过期页面覆盖新文件；同一项目不允许重叠生成，生成期间禁止写入源码；校验成功后在单个事务中提交文件和版本。全局最多同时执行 3 个任务，物理工作队列上限 12。单个用户最多有 3 个实际运行中的任务（排队、失败、完成和主动中断均不计入）；第 4 个请求返回 429，并弹窗提示「有 3 个任务在运行中，占用资源过多」，列出当前任务供查看或中断。主动中断立即释放用户名额，关闭页面不会中断任务。已发出的模型请求可能仍在收尾，物理槽位保留到请求结束，避免取消/重试制造无限后台请求。
-
-中断、失败或服务重启后，重新打开项目会进入进度页，显示「恢复生成」；工作台也提供同一入口。恢复沿用持久化的生成会话、原始方案、需求和源码上下文，每次恢复保留独立任务记录；重复点击会返回同一个进行中任务，恢复同样受用户并发、平台额度和队列限制。旧版本的失败任务也可以恢复。
-
-完整模型输出会先保存源码检查点，校验成功后再提交源码与版本。已有检查点时继续校验/必要时修复，无需整套重做；未获得完整源码时，用原需求及失败信息重新请求模型。模型 JSON/项目结构无效时自动纠正一次，语法校验也最多使用剩余的一次修复机会，不无限重试。中断后的源码若已被用户修改，拒绝直接恢复覆盖，提示基于最新源码开启任务。
-
-这是应用层生成会话复用，并非所有 Provider 都支持的原生 token 续传。模型请求尚未返回时中断，需等原请求结束才能恢复同一会话；迟到的完整结果可以保存为检查点，但不会自动写入项目。恢复记录每会话上限 4 MB、全局上限 128 MB，不存储模型 Key 或原始响应；BYOK 在重启后需要重新连接，已有有效源码检查点可直接完成本地校验和保存。
-
-单个文件上限 5 MB，项目文件总量上限 25 MB；生成源码限 40 个文件、总计 2 MB。上传文件不会写到用户指定的任意主机路径。
-
-“导出源码”下载 ZIP，附带独立运行的 FormaStore 本地适配器和运行说明。导出副本的数据保存在其浏览器 localStorage 中，不包含平台账号、模型凭据或服务器运行数据。
-
-## 代码入口
-
-- `backend/server.py`：同源 HTTP/API 入口、会话 Cookie、请求校验、前端目录白名单和导出。
-- `backend/core.py`：SQLite、认证、项目/文件/版本、任务队列与模型调用。
-- `backend/compiler.py`：源码校验、静态资源合并、预览隔离与运行数据桥。
-- `backend/model_adapters.py`：服务目录、5 种协议的请求/认证与响应适配。
-- `backend/skills.py`：Skill 包格式、个人库、插入点注册、权限校验与生成快照。
-- `backend/templates.py`：可交互的离线模板。
-- `frontend/src/app/router.js`：产品路由、账号页与项目空间。
-- `frontend/src/api/client.js`：前端 API 与会话初始化。
-- `frontend/src/pages/plan/`、`frontend/src/pages/build/`：方案草稿与真实任务进度。
-- `frontend/src/pages/workbench/`：运行预览、对话生成、源码版本、CodeMirror 与项目文件。
-- `frontend/src/components/`：跨页面共享的模型连接、选择器和 Skill 配置界面。
-
-主要接口均为同源 JSON，写请求要求 `X-Forma-Request: 1`，并检查 Origin。所有项目接口检查所属账号。
+写请求要求 `X-Forma-Request: 1` 并检查 Origin；项目接口同时校验所属账号。
 
 | 接口 | 用途 |
 | --- | --- |
-| `POST /api/bootstrap` | 恢复已登录会话；匿名时返回空用户和空项目，不创建访客 |
-| `POST /api/auth/register`、`login`、`logout` | 注册、登录与退出 |
-| `GET/POST /api/projects` | 项目列表与创建 |
-| `GET/PATCH /api/projects/:id` | 项目详情、方案和收藏 |
-| `GET/PUT /api/projects/:id/files` | 实际文件读取、保存、上传 |
-| `GET/PUT/DELETE /api/model-connection` | 查看、配置或移除当前用户的内存模型连接 |
-| `GET/POST /api/skills`、`GET/DELETE /api/skills/:id`、`GET .../export` | 个人 Skill 库、上传、查看、移出与导出 |
-| `GET/PUT /api/projects/:id/skills` | 查看或配置项目主导与局部 Skill 插入点 |
-| `POST /api/projects/:id/generate` | 创建模型或模板构建任务 |
-| `GET /api/jobs/:id`、`POST .../cancel`、`POST .../resume` | 真实进度、中断和恢复原生成会话 |
-| `POST /api/projects/:id/build` | 校验草稿、保存源码版本 |
-| `GET/POST /api/projects/:id/suggestions` | 读取缓存 / 后台生成当前版本的优化建议 |
+| `POST /api/bootstrap` | 恢复会话；匿名返回空用户和项目，不创建访客 |
+| `POST /api/auth/register`、`login`、`logout` | 注册、登录和退出 |
+| `GET/POST /api/projects` | 列表和创建 |
+| `GET/PATCH /api/projects/:id` | 详情、方案和收藏 |
+| `GET/PUT /api/projects/:id/files` | 文件读取、保存和上传 |
+| `GET/PUT/DELETE /api/model-connection` | 当前用户的内存模型连接 |
+| `GET/POST /api/skills`、`GET/DELETE /api/skills/:id`、`GET .../export` | 个人 Skill 库、导入与导出 |
+| `GET/PUT /api/projects/:id/skills` | 项目 Skill 配置 |
+| `POST /api/projects/:id/generate` | 创建模型或基础示例任务 |
+| `GET /api/jobs/:id`、`POST .../cancel`、`POST .../resume` | 进度、中断与恢复 |
+| `POST /api/projects/:id/build` | 校验草稿，保存源码版本 |
+| `GET/POST /api/projects/:id/suggestions` | 读取 / 生成版本优化建议 |
 | `GET .../versions`、`POST .../restore` | 查看与恢复源码版本 |
-| `GET .../preview`、`GET/PUT .../runtime` | 隔离预览、应用数据 |
-| `GET /api/projects/:id/export` | 下载可独立运行的源码 ZIP |
+| `GET .../preview`、`GET/PUT .../runtime` | 隔离预览与应用数据 |
+| `GET /api/projects/:id/export` | 导出独立运行的源码 ZIP |
 
-## 验证
+</details>
 
-安全加固、受控攻击结果、资源配额和上线防护见 [SECURITY.md](SECURITY.md)，HTTPS 反代模板见 [deploy/nginx.conf.example](deploy/nginx.conf.example)。应用代码不能独立防住带宽层 DDoS；公开部署仍需 CDN/WAF、源站防火墙与费用硬额度。
+<details>
+<summary><strong>前端元素检查器</strong></summary>
+
+点击「开发者模式」或按 `Alt + Shift + D` 开启。悬停显示元素 ID、CSS 定位路径和尺寸；`Alt + 点击` 固定，`Esc` 退出。复制信息包含路由与元素位置，不读取输入内容。
+
+按钮支持鼠标 / 触控拖动，位置保存在当前浏览器；聚焦后可用 `Alt + 方向键` 微调。工作台支持检查宿主界面，隔离的生成应用显示 iframe 容器位置，内部源码请在项目编辑器定位。
+
+</details>
+
+## 部署与运维
+
+[打开在线演示](https://forma.179-253-234-78.sslip.io:18443/)，注册账号即可体验。真实生成可使用平台模型或自己的 Key，无 Key 时可选择基础示例。
+
+当前演示部署路径：浏览器 → VPS 的 Caddy HTTPS 入口 → FRP STCP 私有通道 → Mac 主机上的应用。TLS 证书由 Caddy 自动申请和续期；FRP visitor 只监听 VPS 的回环地址，没有新增直接访问后端的公网端口。应用和数据继续保留在本机，现有 FRP 通道保持独立运行。
+
+### Service Base 插件
+
+本机应用作为 `forma-demo` 插件接入现有 Service Base，由基座负责登录后启动、心跳检查、故障重启和子进程回收。健康检查同时验证 `/api/health` 和匿名 `/api/bootstrap`，通过后才报告 ready，后台每 10 秒检查一次；FRP 子进程退出或应用持续不健康时，由基座重新拉起插件。端口预检允许正常的 TIME_WAIT 复用，仍会拒绝已有监听进程。
+
+Mac 上插件运行期间默认用系统 `caffeinate` 阻止空闲休眠，屏幕仍可关闭；配置 `keep_awake=false` 可关闭这一行为。关闭终端不影响服务。电脑需接电、开机并联网；手动休眠、合盖、关机或网络中断仍会影响访问。当前地址作为交付入口保留，日常更新只替换插件快照，不更换域名或端口。
+
+插件协议适配器和可复现的打包脚本位于 `deploy/service-base/`。打包只复制运行代码和前端文件；模型配置、数据库和隧道认证配置通过路径引用，不进入源码仓库或插件包。
 
 ```bash
-make test
+# 使用本机已有数据和配置构建插件；基座本身需事先安装。
+python3 deploy/service-base/build.py \
+  --env-file "$PWD/.env" \
+  --database "$PWD/.data/forma.sqlite3" \
+  --public-url "https://你的公网域名" \
+  --frpc-binary "/绝对路径/frpc" \
+  --frpc-config "/私有配置目录/frpc.toml"
+
+# install 相同 ID 会更新该插件的快照，不重启基座或其他插件。
+~/.local/bin/service-base install "$PWD/build/service-base"
+~/.local/bin/service-base status
+~/.local/bin/service-base logs forma-demo
+~/.local/bin/service-base restart forma-demo
 ```
 
-测试使用临时数据库和本机模型替身，不读取真实 Key、不产生模型费用。覆盖强制登录、会话轮换、旧访客注册迁移、账号隔离、CSRF/静态私有文件保护、路径校验、文件冲突、坏源码保留成功预览、版本恢复与独立运行数据、二进制上传/导出、数据库重开、重启中断、任务取消与重复生成、模型校验后修复、隔离预览。
+首次从手动启动迁移时，应先确认没有运行任务，备份 SQLite，再停止已确认的旧应用进程，避免两个实例争用同一端口。未配置 FRP 时，插件也能单独托管本地应用。安装后的配置更新使用基座的 `configure` 命令；代码改动后需要重新打包和 install，源码目录修改不会自动替换已安装快照。
 
-2026-10-24 已实际调用 DeepSeek 两次：生成待办应用，再按自然语言修改标题与页脚。浏览器验证了添加/完成事项、刷新后恢复；CodeMirror 修改 HTML 并保存，预览更新为 V3；重启真实服务后项目和数据仍保留。应用内浏览器验证了文件上传、刷新与文本查看。Chrome 扩展的文件自动选择需要“允许访问文件网址”权限；应用本身的上传不依赖这个扩展。
+### HTTPS 入口与会话配置
 
-## 当前取舍
+当前 VPS 的入口配置位于 `/opt/forma-edge/Caddyfile`，FRP visitor 私有配置位于 `/opt/forma-edge/visitor.toml`，分别由 `forma-edge` 和 `forma-frp-visitor` 两个 systemd 服务管理。HTTPS 使用 18443，80 用于证书签发，原有 443 服务保持独立。visitor 仅绑定 `127.0.0.1:18770`，通过 STCP 连接到本机的 8770；不要把 visitor 改成公网监听。本机隧道配置保存在 `.data/frp/frpc.toml`，随应用一起由插件管理。
 
-当前交付是可通过公网 HTTPS 访问的单机全栈 Demo，进程由 Service Base 管理。可用性仍依赖这台电脑和网络，尚未配置定期异地备份、持续监控及上游 DDoS 防护。`FORMA_PUBLIC_URL` 用于声明外部访问地址并启用 Secure Cookie。
+公网域名需要通过 `FORMA_PUBLIC_URL` 配置，公网会话 Cookie 才会带 Secure 标记。插件同时启用 `FORMA_ALLOW_LOCAL_ACCESS=1`，允许这台电脑通过 `http://127.0.0.1:8770/` 登录；仅连接来源与 Host 都是本机、且没有代理头时采用本机会话规则。公网 Host 仍要求代理地址校验，公网 Cookie 保留 Secure。独立运行默认不开启该例外。使用独立环境文件时可设置 `FORMA_ENV_FILE`。只有明确受信的边缘代理可以覆盖 `X-Real-IP`；隧道密钥、服务端 token 和证书私钥保存在各机器的私有配置目录，不写进 Git。平台模型的应用内任务额度已启用，费用硬上限和上游 DDoS 防护仍需结合服务商配置。
 
-暂未实现邮箱验证、密码找回、团队协作、生成应用自身的任意服务端代码或 npm 工程构建。当前优先完成了生成—运行—修改—版本恢复的闭环。下一步优先补充可观测性和备份，再考虑多种构建运行时。
+仓库里的 `deploy/nginx.conf.example` 是另一种前后端静态分离部署的参考模板。本机当前实际使用 Caddy + FRP，Nginx 模板未在目标环境运行验证。
 
-界面继续支持浅/深色、响应式、减少动态效果设置。CodeMirror 5.65.16、Lucide 0.468.0 和展示字体均保存在 `assets/` 并附带相应许可证。
+### 故障排查与备份
 
-前端方案页只呈现名称、需求与构建方式，提供自动保存与固定构建入口；工作台使用单行项目栏，对话栏可拖动或用方向键调整宽度（Home 重置），宽度偏好保存在当前浏览器。更多菜单集中管理源码导出、新建项目和草稿预览更新；预览已最新时禁用重复构建。
+如果公网访问异常，先检查本机插件和 `/api/health`，再在 VPS 上检查入口与隧道：
 
-## 前端开发者模式
+```bash
+curl --fail http://127.0.0.1:8770/api/health
+# 以下命令在 VPS 上执行
+systemctl status forma-edge forma-frp-visitor
+journalctl -u forma-edge -u forma-frp-visitor -n 100 --no-pager
+/opt/forma-edge/caddy validate --config /opt/forma-edge/Caddyfile --adapter caddyfile
+```
 
-左下角的「开发者模式」或 `Alt + Shift + D` 开关元素检查。开启后悬停显示高亮边框、元素 ID、CSS 定位路径与尺寸；`Alt + 点击` 固定当前元素，也可在工具面板中固定、继续跟随和复制定位信息。`Esc` 退出，状态仅在当前标签页会话中保留。已有 DOM ID 优先展示，显式 UI 标识使用 `data-ui`，其他元素依据定位路径生成自动 ID 并写入 `data-inspect-id`。复制信息包含当前页面路由和元素定位，不读取输入框内容。
+备份运行中的 SQLite 时使用 SQLite backup API 或 `.backup`，不要只复制主数据库文件而漏掉 WAL。备份、环境文件和 FRP 密钥应存放在私有目录；当前尚未配置定期异地备份。
 
-支持平台各页面和工作台同源界面。生成应用保持 sandbox 隔离，此处显示预览 iframe 容器的 ID，内部元素需在项目编辑器中定位。
+## 验证与边界
 
-开发者模式按钮可直接拖动（支持鼠标和触控），位置保存在当前浏览器，刷新后恢复。拖动不会误触开关，面板展开或窗口缩小时自动限制在可见区域。按钮聚焦时可按 `Alt + 方向键` 微调位置。
+```bash
+make check
+make test
+make build
+```
 
-新增测试覆盖用户 Key 隔离、连接变更与移除、退出/重启清除、按用户连接生成、模型上下文去除类型限制，以及私网/混合 DNS 拦截、TUN 虚拟 DNS 解析、公网 IP 隧道与拒绝重定向。全部使用测试值和模型替身，不消耗真实模型额度。
+最近一次完整验证：**122 项后端测试、13 项前端测试通过**。测试使用临时数据库和本机模型替身，不读取真实 Key，也不产生模型费用。覆盖账号隔离、CSRF、路径校验、模型协议、源码失败保留旧预览、版本恢复、任务中断、并发限制与 Skill 快照等场景。
 
-登录门禁测试覆盖匿名初始化不创建数据、访客入口关闭、旧访客 Cookie 和过期会话无法访问全部工作接口、直接打开 workbench.html 跳转登录，以及旧项目注册/登录迁移。
+**源码、预览和数据各自有边界。** 编辑保存先保留草稿，检查通过后才更新成功版本；失败时显示文件与行列，继续运行上一次成功预览。HTML、CSS 和外部 JS 均做相应结构或语法检查；CSS 覆盖 `.css`、`<style>` 与 `style` 属性。静态检查不等于交互、布局和浏览器兼容性已经验证。更新预览不调用 AI，也不会重新提交最初的需求。
 
-构建等待页采用双栏创作画布：左侧读取服务器真实任务阶段、时间和事件记录，右侧固定采用分层悬浮构形与光扫动效，不提供平面切换或鼠标操作提示。动画是明确标记的动态示意，阶段进度只随后台事件更新，不伪造源码输出或完成百分比。支持暂停动画、减少动态效果、手机布局、断线重连、取消/失败反馈和完成后自动进入工作台。离开页面会停止轮询与计时；后台任务继续保留。设计参考了 Atoms 官方帮助文档中让任务活动与预览区域可见的方式，没有复制其视觉风格或虚构多智能体执行。
+**生成代码运行在浏览器沙箱。** 后端不执行生成程序；预览 iframe 不开放同源权限，CSP 限制联网、外部表单和远程脚本。应用通过 `FormaStore` 读写服务端运行数据，宿主校验来源与随机令牌；恢复源码不会删除运行数据与上传文件。导出副本使用浏览器本地存储，不包含平台账号或服务端数据。
 
-首页右侧造型改为自动演绎：约每 5.2 秒在「灵感形体」与「应用界面」之间平滑展开、收拢，不需要拖动或点击切换。支持暂停/继续；页面不可见或滚出展示区域时暂停计时与绘制，返回后从剩余时间继续；离开首页清理定时器。遵循系统减少动态效果偏好，默认保持静态，用户可主动播放。
+**恢复是应用层会话复用。** 已有完整源码检查点时继续校验，未取得完整输出时按原需求重新请求模型，不是 Provider 原生 token 续传。BYOK 在重启后需重新连接；源码发生变化时拒绝覆盖恢复。同一项目不允许重叠生成，单用户最多 3 个运行任务；主动中断释放用户名额，但已经发出的请求仍可能收尾。全局物理槽位为 3，队列上限为 12。
+
+**当前是单机 Demo。** 暂未实现邮箱验证、密码找回、团队协作、任意服务端代码或 npm 工程构建，也未配置多实例任务队列、定期异地备份和持续监控。应用内的鉴权、限流和资源配额不能抵御带宽层 DDoS；公开部署还需上游 CDN/WAF、源站防火墙与费用硬额度。安全加固和受控攻击结果见 [SECURITY.md](SECURITY.md)。
+
+<details>
+<summary><strong>数据、配额与旧版本兼容</strong></summary>
+
+SQLite 保存密码哈希（scrypt）、散列会话令牌、项目方案、文件修订、源码版本、任务事件和应用数据；浏览器只持有 HttpOnly 会话 Cookie。源码使用修订号避免过期页面覆盖；成功文件与版本在同一事务内提交。
+
+单个上传文件上限 5 MB、项目文件总量 25 MB；生成源码最多 40 个文件 / 2 MB。恢复记录每会话上限 4 MB、全局 128 MB，不存模型 Key 或原始响应。上传不会写到任意主机路径。
+
+优化建议随成功版本缓存。构建时可与源码一起返回，手动构建或旧项目则按需后台补生成；点击只填入可编辑草稿。补生成与构建共用物理槽位，最多输出 1200 tokens，失败后至少间隔 60 秒；24 小时内平台建议每用户最多 8 次、全局 24 次，所有模式每用户最多 30 次，BYOK 全局最多 100 次。建议额度耗尽不影响手动输入需求。
+
+旧访客 Cookie 不再授予工作空间权限。当前浏览器注册或登录时可迁移原访客项目；旧原型的 localStorage / IndexedDB 不自动导入服务端。界面偏好继续保存在浏览器，项目以服务端数据为准。
+
+</details>
