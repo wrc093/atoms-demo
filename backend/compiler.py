@@ -10,6 +10,7 @@ from html import escape
 from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 from .css_validation import check_css, CSSCheckUnavailable
+from .runtime_storage import RULES
 
 
 class BuildError(ValueError):
@@ -153,13 +154,10 @@ def compile_preview(files, runtime, token, read_only=False):
     parser.close()
     state = json.dumps(runtime, ensure_ascii=False).replace("<", "\\u003c")
     nonce = json.dumps(token)
-    bridge = """(()=>{const state=__FORMA_INITIAL__,token=__FORMA_TOKEN__,pending=new Map();let serial=0;
-window.FormaStore={get:(key,fallback)=>Object.hasOwn(state,key)?structuredClone(state[key]):fallback,set:(key,value)=>{if(__FORMA_READONLY__)return Promise.resolve();if(pending.size>=24)return Promise.reject(new Error('保存请求过多，请稍后重试'));const id=++serial;state[key]=structuredClone(value);return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{pending.delete(id);reject(new Error('保存超时'))},12000);pending.set(id,{resolve,reject,timer});parent.postMessage({type:'forma-runtime-set',token,id,key,value},'*')})}};
-window.addEventListener('message',event=>{if(event.source!==parent||event.data?.type!=='forma-runtime-result'||event.data.token!==token)return;const task=pending.get(event.data.id);if(!task)return;clearTimeout(task.timer);pending.delete(event.data.id);event.data.error?task.reject(new Error(event.data.error)):task.resolve()});
-window.addEventListener('error',event=>parent.postMessage({type:'forma-runtime-error',token,message:String(event.message).slice(0,250)},'*'));
-})();"""
-    values={'INITIAL':state,'TOKEN':nonce,'READONLY':'true' if read_only else 'false'}
+    bridge = Path(__file__).with_name('runtime_bridge.js').read_text()
+    values={'INITIAL':state,'TOKEN':nonce,'READONLY':'true' if read_only else 'false',
+            'RULES':json.dumps(RULES)}
     # One pass: user data containing a placeholder must never be substituted.
-    bridge=re.sub(r'__FORMA_(INITIAL|TOKEN|READONLY)__',lambda match:values[match[1]],bridge)
+    bridge=re.sub(r'__FORMA_(INITIAL|TOKEN|READONLY|RULES)__',lambda match:values[match[1]],bridge)
     policy = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'"
     return '<!doctype html><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="' + escape(policy, quote=True) + '"><script>' + bridge + '</script>' + ''.join(parser.output)

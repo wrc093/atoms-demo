@@ -176,7 +176,7 @@ class SecurityTest(unittest.TestCase):
         preview=compile_preview([{'path':'index.html','text':'<main>safe</main>'}],{'a':value},'synthetic-preview-token')
         self.assertIn('TOKEN READONLY __FORMA_TOKEN__ __FORMA_READONLY__ \\u003c/script>',preview)
         self.assertIn('token="synthetic-preview-token"',preview)
-        self.assertIn('if(false)',preview)
+        self.assertIn('readOnly=false',preview)
 
     def test_cancel_does_not_release_real_worker_or_shared_model_budget(self):
         self.ws.queue_slots=threading.BoundedSemaphore(2)

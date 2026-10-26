@@ -7,10 +7,28 @@
   const icons=()=>window.lucide?.createIcons();
   const thread=product.querySelector('.fm-thread'),target=product.querySelector('.fm-preview-target'),overlay=product.querySelector('.fm-overlay');
   let threadSignature='',detail,loadedVersion=0,previewToken='',pollTimer,toastTimer,opener,selectedVersion,reviewRequest=0;
-  const runtimeQueues=new Map();
-  let runtimePending=0,runtimeWindow=0,runtimeCount=0;
   target.innerHTML='<iframe class="fm-running-app" title="生成应用的交互预览" sandbox="allow-scripts allow-forms allow-modals"></iframe>';
   const frame=target.querySelector('iframe');
+  const storageBanner=document.createElement('div');storageBanner.className='fm-storage-status';storageBanner.hidden=true;
+  const storageText=document.createElement('span'),storageRetry=document.createElement('button');
+  storageRetry.type='button';storageRetry.textContent='重试保存';storageRetry.hidden=true;
+  storageBanner.append(storageText,storageRetry);product.querySelector('.fm-canvas-toolbar').after(storageBanner);
+  let storageState={pending:0,failed:0,retryable:0};
+  const runtimeStorage=FormaRuntimeStorage.mount({frame,getToken:()=>previewToken,getRules:()=>FormaAPI.settings?.runtimeStorage,
+    request:(data,signal)=>FormaAPI.request(api('/runtime'),'PUT',data,{signal}),
+    onRuntimeError:message=>toast('应用运行提示：'+message),
+    onStatus(state){storageState=state;renderStorage();},
+  });
+  storageRetry.onclick=()=>runtimeStorage.retry();
+  function renderStorage(){
+    const state=storageState;storageBanner.hidden=!state.pending&&!state.failed;
+    storageBanner.dataset.state=state.failed?'error':'pending';storageBanner.setAttribute('role',state.failed?'alert':'status');
+    storageText.textContent=state.failed?'应用数据未保存：'+state.error+' 请重试成功后再离开。':'正在保存应用数据，请稍候…';
+    storageRetry.hidden=!state.retryable;storageRetry.disabled=!!state.pending;
+    const label=product.querySelector('.fm-canvas-footer>span:last-child');
+    label.textContent=state.failed?'应用数据未保存':state.pending?'应用数据保存中…':state.saved?'应用数据已保存':detail?.project.dirty?'源码草稿已保存 · 等待更新预览':'源码版本已保存';
+  }
+
   thread.innerHTML='<p class="fm-response">正在读取服务端项目…</p>';
   product.querySelector('.fm-prototype').textContent='创作空间';
   product.querySelector('[data-action="share"]').innerHTML='导出源码'+icon('download');product.querySelector('[data-action="share"]').dataset.action='export';
@@ -72,7 +90,7 @@
     product.querySelector('.fm-live').innerHTML=`<span></span>${active()?'构建中':job&&['failed','cancelled'].includes(job.status)?'可恢复生成':'已就绪'}`;
     product.querySelector('.fm-composer [type=submit]').disabled=!!active()||sending;mode.disabled=!!active()||sending;
     product.querySelector('.fm-canvas-footer>span:first-child').innerHTML=`<span class="fm-tiny-dot"></span>${detail.project.currentVersion?'运行 V'+detail.project.currentVersion:'等待首次构建'}${detail.project.dirty?' · 有未构建草稿':''}`;
-    product.querySelector('.fm-canvas-footer>span:last-child').textContent=detail.project.dirty?'草稿已保存 · 等待更新预览':'所有更改已保存';
+    renderStorage();
     syncSuggestions();
     icons();if(scroll)thread.scrollTo({top:thread.scrollHeight,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
   }
@@ -164,23 +182,10 @@
     if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)&&event.target.closest('.fm-composer')){event.preventDefault();generate(event.target.value.trim());}
     if(event.key==='Tab'&&!overlay.hidden){const items=[...overlay.querySelectorAll('button,input,select,textarea,a[href]')].filter(el=>!el.disabled);if(event.shiftKey&&document.activeElement===items[0]){event.preventDefault();items.at(-1)?.focus();}else if(!event.shiftKey&&document.activeElement===items.at(-1)){event.preventDefault();items[0]?.focus();}}
   });
-  window.addEventListener('message',async event=>{
-    const message=event.data;if(event.source!==frame.contentWindow||!previewToken||message?.token!==previewToken)return;
-    if(message.type==='forma-runtime-error'){toast('应用运行提示：'+message.message);return;}
-    if(message.type!=='forma-runtime-set')return;
-    const token=previewToken;const source=event.source;
-    const now=performance.now();if(now-runtimeWindow>1000){runtimeWindow=now;runtimeCount=0;}
-    if(!Number.isSafeInteger(message.id)||message.id<1||typeof message.key!=='string'||!/^[A-Za-z0-9_-]{1,80}$/.test(message.key)||['__proto__','constructor','prototype'].includes(message.key)||runtimePending>=24||++runtimeCount>20){source.postMessage({type:'forma-runtime-result',token,id:message.id,error:'保存请求无效或过于频繁，请稍后重试'},'*');return;}
-    runtimePending++;
-    let task;
-    try{if(JSON.stringify(message.value)?.length>500000)throw new Error('单项应用数据超过限制');task=(runtimeQueues.get(message.key)||Promise.resolve()).catch(()=>{}).then(()=>{if(token!==previewToken)throw new Error('预览版本已更新，请重试');return FormaAPI.request(api('/runtime'),'PUT',{key:message.key,value:message.value});});runtimeQueues.set(message.key,task);await task;source.postMessage({type:'forma-runtime-result',token,id:message.id},'*');}
-    catch(error){source.postMessage({type:'forma-runtime-result',token,id:message.id,error:error.message},'*');toast('应用数据未能保存：'+error.message);}
-    finally{runtimePending--;if(task&&runtimeQueues.get(message.key)===task)runtimeQueues.delete(message.key);}
-  });
   window.addEventListener('forma-user-model-selected',()=>{mode.value='byok';modelPicker.sync();syncSuggestions();});
   window.addEventListener('forma-model-connection-change',()=>{mode.innerHTML=FormaModel.options(mode.value||'byok');syncSuggestions();});
   mode.addEventListener('change',()=>{if(mode.value==='byok'&&!FormaAPI.settings?.userModel?.ready)FormaModel.open();syncSuggestions();});
-  window.addEventListener('pagehide',()=>{clearTimeout(pollTimer);projectSuggestions.destroy();});
+  window.addEventListener('pagehide',()=>{clearTimeout(pollTimer);projectSuggestions.destroy();runtimeStorage.destroy();});
   ready.then(async data=>{
     if(!data.user||data.user.guest){go('/login?next='+encodeURIComponent('/workspace/'+id));return;}
     await load();

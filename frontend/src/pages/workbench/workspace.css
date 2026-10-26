@@ -97,3 +97,12 @@
 #forma-design .fm-suggestion-note{font-size:10px;line-height:1.7;color:var(--wb-muted)}
 #forma-design .fm-suggestions button.fm-suggestion-retry{justify-self:start;font-size:10px;padding:5px 0;background:none;border:0;color:var(--wb-muted)}
 @media(prefers-reduced-motion:reduce){#forma-design .fm-suggestions button.fm-project-suggestion{transition:none;transform:none}}
+
+/* Keep failed runtime writes visible independently of transient application messages. */
+#forma-design .fm-storage-status{flex-shrink:0;display:flex;align-items:center;gap:14px;padding:11px 20px;background:light-dark(#f3f2ea,#282d26);border-bottom:1px solid var(--wb-line);color:var(--wb-ink);font-size:12px;line-height:1.6}
+#forma-design .fm-storage-status[hidden]{display:none}
+#forma-design .fm-storage-status[data-state=error]{background:light-dark(#fff1eb,#382922);color:light-dark(#85472c,#efb397)}
+#forma-design .fm-storage-status>span{flex:1;overflow-wrap:anywhere}
+#forma-design .fm-storage-status>button{flex-shrink:0;border:1px solid currentColor;border-radius:7px;padding:5px 10px;background:transparent;color:inherit;font:inherit;cursor:pointer}
+#forma-design .fm-storage-status>button:disabled{opacity:.5;cursor:wait}
+@media(max-width:600px){#forma-design .fm-storage-status{padding:9px 12px;font-size:11px}}

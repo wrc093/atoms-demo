@@ -177,6 +177,30 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(reopened.session(token)['id'],self.bootstrap['user']['id'])
         self.assertEqual(reopened.runtime(self.bootstrap['user']['id'],self.project)['counter'],12)
 
+    def test_namespaced_runtime_keys_survive_refresh_reopen_and_login(self):
+        owner=self.bootstrap['user']['id']
+        tasks=[{'id':'one','text':'新增事项一','done':True},{'id':'two','text':'新增事项二','done':False}]
+        expected={'todo.tasks.v1':tasks,'todo.filter.v1':'all','todo:preferences-v1':{'compact':True}}
+        for key,value in expected.items():
+            self.assertEqual(self.client.call(self.root+'/runtime','PUT',{'key':key,'value':value})[0],200,key)
+        self.assertEqual(self.client.call(self.root+'/runtime')[1]['data'],expected)
+        preview=self.client.call(self.root+'/preview')[1]['html']
+        self.assertIn('todo.tasks.v1',preview);self.assertIn('新增事项一',preview)
+        reopened=Workspace(self.path)
+        self.assertEqual(reopened.runtime(owner,self.project),expected)
+        self.assertEqual(self.client.call('/api/auth/logout','POST',{})[0],200)
+        fresh=Client(self.base)
+        self.assertEqual(fresh.call(self.root+'/runtime')[0],401)
+        self.assertEqual(fresh.call('/api/auth/login','POST',{'email':'test@example.invalid','password':'A-test-password-92'})[0],200)
+        self.assertEqual(fresh.call(self.root+'/runtime')[1]['data'],expected)
+        self.assertEqual(fresh.call('/api/bootstrap','POST',{})[1]['settings']['runtimeStorage']['keyPattern'],
+                         reopened.settings(owner)['runtimeStorage']['keyPattern'])
+
+    def test_runtime_key_contract_rejects_reserved_paths_newlines_and_oversize(self):
+        for key in ['__proto__','constructor','prototype','todo/tasks','bad\\key','todo.tasks.v1\n','a'*81,'']:
+            self.assertEqual(self.client.call(self.root+'/runtime','PUT',{'key':key,'value':1})[0],400,repr(key))
+        self.assertEqual(self.client.call(self.root+'/runtime')[1]['data'],{})
+
     def test_interrupted_job_is_failed_on_restart(self):
         with self.ws.db() as c:
             c.execute("INSERT INTO jobs VALUES('interrupted',?,'test','starter','build','running',2,NULL,1,'{}',?,?)",(self.project,now(),now()))

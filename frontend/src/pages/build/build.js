@@ -39,6 +39,13 @@
     const root=document.querySelector('.build-session');if(!root)return;
     let job,poll,ticker,stopped=false,fetching=false,redirecting=false,paused=false,liveMessage='',lastEventSignature='';
     const reduced=matchMedia('(prefers-reduced-motion: reduce)');
+    // Enter from a fresh document after saving a version. This also refreshes
+    // bootstrap state and avoids leaving a newly mounted workbench iframe blank.
+    function enterWorkspace(){
+      const url=new URL('index.html',location.href);url.hash='/workspace/'+encodeURIComponent(id);
+      location.assign(url.href);
+    }
+
     const motion=root.querySelector('[data-build-motion]');
     const select=selector=>root.querySelector(selector);
     const errorBox=select('.build-error');
@@ -89,7 +96,7 @@
       select('[data-build-resume]').hidden=!terminal||!job.canResume;
       if(terminal){errorBox.querySelector('p').textContent=job.error||'任务未完成，可以恢复生成。';select('[data-build-checkpoint]').textContent=!job.canResume?'源码已有新修改，请返回方案基于最新内容生成。':job.checkpoint==='requirements'?'需求与生成会话已保留，将继续原任务。':'已保留生成源码，将从校验阶段继续。';setPaused(true);clearInterval(ticker);}
       formatElapsed();refreshIcons();
-      if(complete&&!redirecting){redirecting=true;root.classList.add('build-complete');projects=projects.map(project=>project.id===id?detail.project:project);clearInterval(ticker);poll=setTimeout(()=>{if(root.isConnected&&!stopped)navigate('/workspace/'+id);},reduced.matches?0:850);}
+      if(complete&&!redirecting){redirecting=true;root.classList.add('build-complete');projects=projects.map(project=>project.id===id?detail.project:project);clearInterval(ticker);poll=setTimeout(()=>{if(root.isConnected&&!stopped)enterWorkspace();},reduced.matches?0:850);}
       return terminal||complete;
     }
     async function run(){
@@ -98,7 +105,7 @@
       try{
         const detail=await FormaAPI.request('/projects/'+encodeURIComponent(id));
         if(stopped||!root.isConnected)return;
-        if(!detail.job){if(detail.project.currentVersion){navigate('/workspace/'+id);return;}throw new Error('还没有构建任务，请返回方案页确认构建。');}
+        if(!detail.job){if(detail.project.currentVersion){enterWorkspace();return;}throw new Error('还没有构建任务，请返回方案页确认构建。');}
         if(!render(detail))poll=setTimeout(run,document.hidden?5000:1600);
       }catch(error){if(stopped||!root.isConnected)return;root.dataset.status='disconnected';errorBox.hidden=false;errorBox.querySelector('p').textContent='暂时无法获取进度：'+error.message;select('[data-build-reconnect]').hidden=false;select('[data-build-status]').textContent='进度连接中断';setPaused(true);}
       finally{fetching=false;}
