@@ -1,0 +1,26 @@
+{
+  "builder": "esbuild@0.28.2",
+  "sha256": "6f33e56f27aa00ff7fd4495ea3dfe2f8378a741291ade17a8b10bd39e544c5bd",
+  "packages": [
+    {
+      "name": "nanoid",
+      "version": "3.3.20",
+      "integrity": "sha512-uKdg2G3GNCKQn9byYOpxbGqrT2fGO5KRt5J/8b3pok8rT6qxGWF6hxMyJiEYtAf+FVyYuD9hRaDqX5uPFYJ4ZQ=="
+    },
+    {
+      "name": "picocolors",
+      "version": "1.1.1",
+      "integrity": "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="
+    },
+    {
+      "name": "postcss",
+      "version": "8.5.31",
+      "integrity": "sha512-YUbWYCgErwnMAVkjUnYa+KlMBzGpHwiIt/DE7f0G33AuX2LH9UcTk6KgWxd3zRU+pN3u/C+Xl3EnMLM4Hea7Sg=="
+    },
+    {
+      "name": "source-map-js",
+      "version": "1.2.2",
+      "integrity": "sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw=="
+    }
+  ]
+}

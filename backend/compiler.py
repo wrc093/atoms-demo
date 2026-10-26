@@ -9,6 +9,7 @@ import sys
 from html import escape
 from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
+from .css_validation import check_css, CSSCheckUnavailable
 
 
 class BuildError(ValueError):
@@ -122,6 +123,9 @@ def validate(files):
     if sum(len(text.encode()) for text in sources.values()) > 2_000_000:
         raise BuildError("源码总大小超过 2 MB")
     check_html(sources)
+    try:issue=check_css(sources)
+    except CSSCheckUnavailable as error:raise BuildError(str(error)) from None
+    if issue:raise BuildError(f'{issue["path"]}:{issue["line"]}:{issue["column"]}：{issue["message"]}',issue)
     parser = Bundler(sources)
     parser.feed(sources["index.html"])
     parser.close()

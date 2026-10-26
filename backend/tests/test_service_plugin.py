@@ -33,6 +33,7 @@ class ServicePluginTest(unittest.TestCase):
     def test_snapshot_contains_runtime_and_licenses_without_host_data_or_credentials(self):
         package=module.build(self.root/'package',{})
         for name in ('app/backend/server.py','app/backend/vendor/licenses/html5lib/LICENSE',
+                     'app/backend/css_check.cjs','app/backend/vendor/postcss-parser.cjs','app/backend/vendor/licenses/postcss/LICENSE',
                      'app/frontend/index.html','app/frontend/src/api/client.js','plugin.json'):
             self.assertTrue((package/name).is_file(),name)
         for name in ('app/.env','app/.data','app/backend/tests','app/frontend/tests','app/frontend/scripts','app/frontend/dist'):

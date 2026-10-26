@@ -23,12 +23,12 @@ Forma 使用一个仓库管理独立的前端工程和 Python 后端。根目录
 启动命令为 `python3 -m backend`。`backend/__main__.py` 只负责入口，`backend/server.py` 负责 HTTP、Cookie、Origin/CSRF 校验、JSON 路由与响应。
 
 - `core.py`：业务编排、身份、SQLite、项目/文件/版本、任务会话和队列。
-- `compiler.py`、`html_check.py`：源码校验与静态预览构建，HTML 检查在隔离子进程内运行。
+- `compiler.py`、`html_check.py`、`css_validation.py`、`css_check.cjs`：源码校验与静态预览构建。HTML/CSS 解析在隔离子进程内运行；CSS 诊断映射回外部样式表或 HTML 内嵌样式的源文件位置。
 - `model_adapters.py`、`providers.py`：Provider 目录、协议适配及用户模型的网络访问边界。
 - `skills.py`：个人包、项目绑定、范围注册与不可变生成快照。
 - `security.py`：速率限制等公共安全机制；`templates.py`：离线基础示例。
 - `tests/`：临时数据库、模拟模型服务、HTTP 集成与攻击回归。
-- `vendor/`：固定版本的 HTML 校验依赖与许可证。
+- `vendor/`：固定版本的 HTML/CSS 校验依赖、构建清单与许可证。
 
 数据库保持在项目根目录 `.data/`，环境文件保持在根目录 `.env`。路径由模块位置计算，不依赖启动时的工作目录；目录迁移不会新建一套账号或项目数据库。运行数据不属于静态前端。
 
